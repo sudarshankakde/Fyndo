@@ -1,0 +1,153 @@
+﻿# ============================================================
+# Fyndo — Hyper-Local Short Video & Coupon Platform
+# .gitignore — Root Level (covers backend + frontend)
+# ============================================================
+
+# --- Sensitive / Environment Files --------------------------
+.env
+.env.local
+.env.*.local
+.env.production
+.env.staging
+backend/.env
+frontend/.env
+frontend/.env.local
+!.env.example
+!backend/.env.example
+!frontend/.env.example
+
+# --- Python / FastAPI Backend --------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+.Python
+*.egg
+*.egg-info/
+build/
+wheels/
+.eggs/
+pip-wheel-metadata/
+
+# Virtual Environments
+.venv/
+venv/
+env/
+ENV/
+backend/.venv/
+
+# SQLite Dev Database (auto-created at runtime)
+backend/fyndo_dev.db
+backend/fyndo_dev.db-shm
+backend/fyndo_dev.db-wal
+*.db
+*.sqlite
+*.sqlite3
+
+# Pytest / Coverage
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+*.lcov
+nosetests.xml
+test-results/
+junit.xml
+
+# MyPy / Pyright / Ruff
+.mypy_cache/
+.ruff_cache/
+.pytype/
+
+# --- Node.js / React Frontend --------------------------------
+node_modules/
+frontend/node_modules/
+.npm
+.yarn/
+.pnp.*
+
+# Build Outputs
+frontend/dist/
+frontend/build/
+frontend/.vite/
+.next/
+out/
+
+# TypeScript
+*.tsbuildinfo
+frontend/tsconfig.tsbuildinfo
+
+# Vite / Vitest
+frontend/coverage/
+
+# --- Docker --------------------------------------------------
+docker-compose.override.yml
+docker-compose.local.yml
+
+# --- IDE / Editor Configs ------------------------------------
+# VS Code
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+!.vscode/launch.json
+
+# JetBrains
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# Vim / Emacs
+*.swp
+*.swo
+*~
+
+# --- Operating System Files ----------------------------------
+# macOS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+
+# Windows
+Thumbs.db
+Desktop.ini
+ehthumbs.db
+$RECYCLE.BIN/
+
+# --- Logs & Temporary Files ----------------------------------
+*.log
+logs/
+*.pid
+*.tmp
+*.temp
+tmp/
+temp/
+
+# --- Media / Uploads (use Cloudinary in production) ----------
+uploads/
+backend/uploads/
+frontend/public/uploads/
+*.mp4
+*.mov
+*.avi
+*.webm
+*.mkv
+
+# --- Cloudinary / Third-Party Credentials --------------------
+cloudinary.yml
+serviceAccountKey.json
+firebase-adminsdk*.json
+
+# --- Redis / Celery ------------------------------------------
+celerybeat-schedule
+celerybeat.pid
+dump.rdb
+
+# --- Documentation Build Outputs ----------------------------
+docs/_build/
+docs/site/
+site/
