@@ -1,16 +1,21 @@
 import React, { useState } from 'react'
-import { Film, CheckCircle2, AlertCircle, UploadCloud, Info } from 'lucide-react'
+import { Film, AlertCircle, Info } from 'lucide-react'
 import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
 import { useFormValidation } from '@/hooks/useFormValidation'
 import { offerCreateSchema } from '@/utils/validationSchemas'
+import { merchantService } from '@/services/merchantService'
+import { MerchantVideoUploader } from './MerchantVideoUploader'
 
 interface MerchantNewOfferViewProps {
   onSuccess: (msg: string) => void
 }
 
 export const MerchantNewOfferView: React.FC<MerchantNewOfferViewProps> = ({ onSuccess }) => {
+  const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [videoFile, setVideoFile] = useState<string | null>(null)
+  const [submitError, setSubmitError] = useState<string | null>(null)
 
   const {
     values,
@@ -35,18 +40,55 @@ export const MerchantNewOfferView: React.FC<MerchantNewOfferViewProps> = ({ onSu
     offerCreateSchema
   )
 
+  const handleFile = (file: File) => {
+    setSelectedFile(file)
+    const url = URL.createObjectURL(file)
+    setPreviewUrl(url)
+    setVideoFile(file.name)
+    setSubmitError(null)
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     const isValid = await validateAll()
     if (!isValid) return
 
+    setSubmitError(null)
     setIsSubmitting(true)
-    setTimeout(() => {
-      setIsSubmitting(false)
+
+    try {
+      let finalVideoUrl = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/WeAreGoingOnBullrun.mp4'
+
+      if (selectedFile) {
+        finalVideoUrl = await merchantService.uploadMedia(selectedFile, 'reels')
+      }
+
+      await merchantService.createReel({
+        title: values.title,
+        video_url: finalVideoUrl,
+        thumbnail_url: 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=800&q=80',
+        duration_seconds: 30,
+        audio_type: 'CAMERA_MIC',
+        coupon: {
+          title: values.title,
+          discount_type: values.discountType === 'FLAT' ? 'FLAT_AMOUNT' : 'PERCENTAGE',
+          discount_value: values.discountValue,
+          min_order_amount: values.minBillAmount,
+          validity_days: values.validityDays,
+          terms: 'Valid for in-store redemption',
+        },
+      })
+
       resetForm()
+      setSelectedFile(null)
+      setPreviewUrl(null)
       setVideoFile(null)
-      onSuccess('Video offer submitted! It will be reviewed within 2 hours before going live.')
-    }, 800)
+      onSuccess('Video offer submitted successfully! It has been placed in review.')
+    } catch (err: any) {
+      setSubmitError(err.message || 'Failed to submit video offer. Please check details.')
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   return (
@@ -60,31 +102,26 @@ export const MerchantNewOfferView: React.FC<MerchantNewOfferViewProps> = ({ onSu
         </p>
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-5">
-        {/* Video Reel Simulator */}
-        <div className="space-y-1.5">
-          <label className="font-mono text-xs text-stone-300 block">
-            15–60s Video Reel (Raw Store Audio Only)
-          </label>
-          <div className="border border-dashed border-stone-800 rounded-xl p-5 bg-stone-900/40 text-center space-y-2">
-            <UploadCloud className="h-8 w-8 text-amber-400 mx-auto" />
-            <p className="text-xs text-stone-300 font-medium">
-              {videoFile ? `Selected: ${videoFile}` : 'Upload vertical 9:16 video reel'}
-            </p>
-            <p className="text-[11px] text-stone-400">
-              Only authentic camera audio or voiceover. No copyrighted music.
-            </p>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setVideoFile('sitabuldi_sweets_reel_01.mp4')}
-              className="text-xs font-mono"
-            >
-              {videoFile ? 'Change Reel' : 'Select Sample Video'}
-            </Button>
-          </div>
+      {submitError && (
+        <div className="p-3 rounded-lg border border-red-800/80 bg-red-950/60 text-red-300 text-xs font-mono flex items-center gap-2">
+          <AlertCircle className="h-4 w-4 shrink-0 text-red-400" />
+          <span>{submitError}</span>
         </div>
+      )}
+
+      <form onSubmit={handleSubmit} className="space-y-5">
+        {/* Video Reel Upload Box with Live Preview */}
+        <MerchantVideoUploader
+          selectedFile={selectedFile}
+          previewUrl={previewUrl}
+          videoFileName={videoFile}
+          onSelectFile={handleFile}
+          onUseSample={(name, url) => {
+            setVideoFile(name)
+            setPreviewUrl(url)
+            setSelectedFile(null)
+          }}
+        />
 
         {/* Offer Title */}
         <div className="space-y-1">

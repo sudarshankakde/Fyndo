@@ -77,6 +77,14 @@ async def custom_http_exception_handler(request: Request, exc: HTTPException):
     )
 
 
+# Mount static uploads directory for direct reel video streaming & thumbnails
+import os
+from fastapi.staticfiles import StaticFiles
+
+UPLOAD_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../uploads"))
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
+
 # Register API Router
 app.include_router(api_router, prefix=settings.API_V1_STR)
 

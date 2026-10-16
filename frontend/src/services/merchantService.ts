@@ -62,6 +62,18 @@ export const merchantService = {
     return res.data.data
   },
 
+  async uploadMedia(file: File, folder: string = 'reels'): Promise<string> {
+    const formData = new FormData()
+    formData.append('file', file)
+    formData.append('folder', folder)
+    const res = await apiClient.post<ResponseEnvelope<{ url: string }>>('/media/upload', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    })
+    return res.data.data.url
+  },
+
   async createReel(data: ReelCreatePayload) {
     const res = await apiClient.post<ResponseEnvelope<{ reel_id: string; status: string }>>('/reels', data)
     return res.data.data
