@@ -52,7 +52,7 @@ def main():
     print(" Press Ctrl+C anytime to stop all services.\n" + "-" * 62)
 
     py_exe = find_backend_python()
-    backend_cmd = [py_exe, "-m", "uvicorn", "app.main:app", "--reload", "--port", "5000"]
+    backend_cmd = [py_exe, "-m", "uvicorn", "app.main:app", "--reload", "--host", "0.0.0.0", "--port", "5000"]
 
     # Windows requires shell=True for npm/bat
     use_shell = sys.platform == "win32"
