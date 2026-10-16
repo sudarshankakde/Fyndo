@@ -33,6 +33,7 @@ export interface ReelCreatePayload {
   thumbnail_url: string
   duration_seconds: number
   audio_type: 'CAMERA_MIC' | 'VOICEOVER'
+  allow_comments?: boolean
   coupon: {
     title: string
     discount_type: 'PERCENTAGE' | 'FLAT_AMOUNT' | 'BOGO'

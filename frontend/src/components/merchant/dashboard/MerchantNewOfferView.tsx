@@ -16,6 +16,7 @@ export const MerchantNewOfferView: React.FC<MerchantNewOfferViewProps> = ({ onSu
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [videoFile, setVideoFile] = useState<string | null>(null)
   const [submitError, setSubmitError] = useState<string | null>(null)
+  const [allowComments, setAllowComments] = useState(true)
 
   const {
     values,
@@ -69,6 +70,7 @@ export const MerchantNewOfferView: React.FC<MerchantNewOfferViewProps> = ({ onSu
         thumbnail_url: 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=800&q=80',
         duration_seconds: 30,
         audio_type: 'CAMERA_MIC',
+        allow_comments: allowComments,
         coupon: {
           title: values.title,
           discount_type: values.discountType === 'FLAT' ? 'FLAT_AMOUNT' : 'PERCENTAGE',
@@ -239,6 +241,20 @@ export const MerchantNewOfferView: React.FC<MerchantNewOfferViewProps> = ({ onSu
               ? 'Food offers expire within 2–5 days to keep promotions fresh and encourage prompt walk-ins.'
               : 'Apparel & electronics offers can be active for up to 15 days.'}
           </span>
+        </div>
+
+        {/* Customer Comments Permission */}
+        <div className="flex items-center justify-between p-3.5 rounded-lg border border-stone-800 bg-stone-900/60">
+          <div>
+            <p className="text-xs font-semibold text-stone-200">Customer Comments</p>
+            <p className="text-[11px] text-stone-400">Allow shoppers to ask questions and review this offer</p>
+          </div>
+          <input
+            type="checkbox"
+            checked={allowComments}
+            onChange={(e) => setAllowComments(e.target.checked)}
+            className="h-4 w-4 rounded border-stone-700 text-amber-500 focus:ring-amber-500 bg-stone-950 cursor-pointer"
+          />
         </div>
 
         <Button type="submit" variant="primary" size="lg" className="w-full" isLoading={isSubmitting}>

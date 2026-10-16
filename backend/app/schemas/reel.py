@@ -32,6 +32,7 @@ class ReelCreateRequest(BaseModel):
     cloudinary_public_id: Optional[str] = None
     duration_seconds: int = Field(30, ge=5, le=180)
     audio_type: str = Field("CAMERA_MIC", description="CAMERA_MIC or VOICEOVER")
+    allow_comments: bool = Field(True, description="Enable or disable customer comments")
     coupon: CouponCreateEmbedded
 
     @field_validator("audio_type")
@@ -70,6 +71,8 @@ class ReelOut(BaseModel):
     thumbnail_url: str
     duration_seconds: int
     views_count: int
+    allow_comments: bool = True
+    comments_count: int = 18
     merchant: MerchantFeedSummary
     coupon: Optional[CouponFeedSummary] = None
 

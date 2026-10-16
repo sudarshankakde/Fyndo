@@ -95,6 +95,8 @@ async def get_proximity_feed(
                 thumbnail_url=reel.thumbnail_url,
                 duration_seconds=reel.duration_seconds,
                 views_count=reel.views_count,
+                allow_comments=getattr(reel, "allow_comments", True),
+                comments_count=18,
                 merchant=MerchantFeedSummary(
                     id=merchant.id,
                     business_name=merchant.business_name,
@@ -165,6 +167,7 @@ async def create_reel(
         thumbnail_url=request.thumbnail_url or "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=800&q=80",
         cloudinary_public_id=request.cloudinary_public_id,
         audio_type=audio_enum,
+        allow_comments=request.allow_comments,
         status=ReelStatus.PENDING_MODERATION
     )
     db.add(reel)
