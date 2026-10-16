@@ -1,68 +1,72 @@
 import React, { useEffect, useState } from 'react'
-import { ShieldCheck, Check, X, RefreshCw, AlertCircle, Play } from 'lucide-react'
-import { adminService, AdminPendingReel } from '@/services/adminService'
+import { ShieldCheck, RefreshCw, AlertCircle, LayoutDashboard, Film, Store, ShieldAlert } from 'lucide-react'
+import {
+  adminService,
+  AdminPendingReel,
+  AdminStats,
+  AdminMerchantItem,
+} from '@/services/adminService'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
-import { useTranslation } from '@/hooks/useTranslation'
+import { AdminStatsOverview } from '@/components/admin/AdminStatsOverview'
+import { AdminModerationDesk } from '@/components/admin/AdminModerationDesk'
+import { AdminMerchantsDesk } from '@/components/admin/AdminMerchantsDesk'
+import { AdminReelsDesk } from '@/components/admin/AdminReelsDesk'
+
+type AdminTab = 'overview' | 'moderation' | 'merchants' | 'reels'
 
 export const AdminPage: React.FC = () => {
-  const { t } = useTranslation()
-  const [reels, setReels] = useState<AdminPendingReel[]>([])
+  const [activeTab, setActiveTab] = useState<AdminTab>('overview')
+  const [stats, setStats] = useState<AdminStats | null>(null)
+  const [pendingReels, setPendingReels] = useState<AdminPendingReel[]>([])
+  const [allReels, setAllReels] = useState<AdminPendingReel[]>([])
+  const [merchants, setMerchants] = useState<AdminMerchantItem[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [decisionProcessingId, setDecisionProcessingId] = useState<string | null>(null)
 
-  const loadPendingReels = async () => {
+  const loadData = async () => {
     setIsLoading(true)
     setError(null)
     try {
-      const data = await adminService.getPendingReels()
-      setReels(data)
+      const [statsData, pendingData, allReelsData, merchantsData] = await Promise.all([
+        adminService.getStats().catch(() => null),
+        adminService.getPendingReels().catch(() => []),
+        adminService.getAllReels().catch(() => []),
+        adminService.getMerchants().catch(() => []),
+      ])
+      if (statsData) setStats(statsData)
+      setPendingReels(pendingData)
+      setAllReels(allReelsData)
+      setMerchants(merchantsData)
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to load moderation queue')
+      setError(err instanceof Error ? err.message : 'Failed to load administrative data')
     } finally {
       setIsLoading(false)
     }
   }
 
   useEffect(() => {
-    loadPendingReels()
+    loadData()
   }, [])
 
-  const handleDecision = async (reelId: string, decision: 'APPROVE' | 'REJECT') => {
-    setDecisionProcessingId(reelId)
-    try {
-      await adminService.decideReel(
-        reelId,
-        decision,
-        decision === 'REJECT' ? 'Violated copyright/audio guidelines' : undefined
-      )
-      setReels((prev) => prev.filter((r) => r.id !== reelId))
-    } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : 'Decision failed')
-    } finally {
-      setDecisionProcessingId(null)
-    }
-  }
-
   return (
-    <div className="min-h-screen pb-24 pt-4 max-w-2xl mx-auto px-4 space-y-5">
-      {/* Header */}
+    <div className="min-h-screen pb-24 pt-4 max-w-4xl mx-auto px-4 space-y-5">
+      {/* Top Header */}
       <div className="flex items-center justify-between gap-2">
         <div>
           <div className="flex items-center gap-2 mb-1">
             <Badge variant="amber" className="text-xs font-bold py-0.5">
-              Super Admin Moderation
+              Super Admin Operations
             </Badge>
-            <span className="text-xs text-slate-400">Content Integrity</span>
+            <span className="text-xs text-slate-400">Regional Data Hub</span>
           </div>
-          <h1 className="text-2xl font-extrabold text-white font-heading">{t.admin_desk}</h1>
+          <h1 className="text-2xl font-extrabold text-white font-heading">Operations Portal</h1>
           <p className="text-xs text-slate-400">
-            Mandatory review of merchant reels before publication to local discovery feeds.
+            Control center for store onboarding, video moderation, offers, and cashier terminals.
           </p>
         </div>
 
-        <Button variant="ghost" size="sm" onClick={loadPendingReels} className="text-slate-400">
+        <Button variant="ghost" size="sm" onClick={loadData} className="text-slate-400">
           <RefreshCw className="h-3.5 w-3.5 mr-1" />
           Refresh
         </Button>
@@ -75,91 +79,73 @@ export const AdminPage: React.FC = () => {
         </div>
       )}
 
+      {/* Metric Cards Banner */}
+      <AdminStatsOverview stats={stats} />
+
+      {/* Tabs Switcher */}
+      <div className="flex items-center gap-1.5 p-1.5 rounded-2xl bg-slate-900 border border-slate-800 overflow-x-auto">
+        <button
+          onClick={() => setActiveTab('overview')}
+          className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+            activeTab === 'overview' ? 'bg-amber-400 text-slate-900 shadow-sm' : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          <LayoutDashboard className="h-3.5 w-3.5" />
+          Overview
+        </button>
+
+        <button
+          onClick={() => setActiveTab('moderation')}
+          className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all relative ${
+            activeTab === 'moderation' ? 'bg-amber-400 text-slate-900 shadow-sm' : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          <ShieldAlert className="h-3.5 w-3.5" />
+          Moderation Desk
+          {pendingReels.length > 0 && (
+            <span className="ml-1 px-1.5 py-0.2 rounded-full text-[10px] bg-rose-500 text-white font-black">
+              {pendingReels.length}
+            </span>
+          )}
+        </button>
+
+        <button
+          onClick={() => setActiveTab('merchants')}
+          className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+            activeTab === 'merchants' ? 'bg-amber-400 text-slate-900 shadow-sm' : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          <Store className="h-3.5 w-3.5" />
+          Stores ({merchants.length})
+        </button>
+
+        <button
+          onClick={() => setActiveTab('reels')}
+          className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+            activeTab === 'reels' ? 'bg-amber-400 text-slate-900 shadow-sm' : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          <Film className="h-3.5 w-3.5" />
+          Reels & Offers ({allReels.length})
+        </button>
+      </div>
+
+      {/* Main Tab Views */}
       {isLoading ? (
         <div className="py-20 flex flex-col items-center justify-center gap-3">
           <RefreshCw className="h-8 w-8 text-amber-400 animate-spin" />
-          <p className="text-xs text-slate-400">Loading pending queue...</p>
+          <p className="text-xs text-slate-400">Loading operations data...</p>
         </div>
-      ) : reels.length > 0 ? (
-        <div className="space-y-5">
-          {reels.map((reel) => (
-            <div
-              key={reel.id}
-              className="rounded-3xl border border-slate-800 bg-slate-900/90 p-4 shadow-xl space-y-3.5"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <h3 className="font-bold text-base text-white">{reel.title}</h3>
-                  <p className="text-xs text-amber-400 font-semibold">{reel.merchant_name}</p>
-                  <p className="text-[11px] text-slate-400">
-                    {reel.city} • Sector: {reel.sector}
-                  </p>
-                </div>
-                <Badge variant="outline" className="text-[11px]">
-                  {reel.audio_type}
-                </Badge>
-              </div>
-
-              {/* Video Player */}
-              <div className="relative aspect-video max-h-60 rounded-2xl overflow-hidden bg-black border border-slate-800">
-                <video
-                  src={reel.video_url}
-                  poster={reel.thumbnail_url}
-                  controls
-                  className="w-full h-full object-contain"
-                />
-              </div>
-
-              {/* Attached Coupon Review */}
-              {reel.coupon_title && (
-                <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800 text-xs flex items-center justify-between">
-                  <div>
-                    <span className="font-bold text-white block">{reel.coupon_title}</span>
-                    <span className="text-[11px] text-slate-400">
-                      Discount: {reel.discount_value}% | Validity: {reel.validity_days} days
-                    </span>
-                  </div>
-                  <Badge variant="amber">Offer Attached</Badge>
-                </div>
-              )}
-
-              {/* Action Buttons */}
-              <div className="flex items-center gap-2.5 pt-1">
-                <Button
-                  variant="primary"
-                  size="md"
-                  className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold"
-                  disabled={decisionProcessingId === reel.id}
-                  onClick={() => handleDecision(reel.id, 'APPROVE')}
-                >
-                  <Check className="h-4 w-4 mr-1.5" />
-                  Approve to Feed
-                </Button>
-                <Button
-                  variant="destructive"
-                  size="md"
-                  className="flex-1 font-bold"
-                  disabled={decisionProcessingId === reel.id}
-                  onClick={() => handleDecision(reel.id, 'REJECT')}
-                >
-                  <X className="h-4 w-4 mr-1.5" />
-                  Reject Reel
-                </Button>
-              </div>
-            </div>
-          ))}
-        </div>
+      ) : activeTab === 'moderation' ? (
+        <AdminModerationDesk reels={pendingReels} onRefresh={loadData} />
+      ) : activeTab === 'merchants' ? (
+        <AdminMerchantsDesk merchants={merchants} onRefresh={loadData} />
+      ) : activeTab === 'reels' ? (
+        <AdminReelsDesk reels={allReels} merchants={merchants} onRefresh={loadData} />
       ) : (
-        <div className="py-20 text-center rounded-3xl border border-slate-800 bg-slate-900/40 p-8 space-y-3">
-          <div className="h-14 w-14 rounded-full bg-emerald-500/10 text-emerald-400 flex items-center justify-center mx-auto">
-            <ShieldCheck className="h-7 w-7" />
-          </div>
-          <h3 className="text-base font-bold text-white font-heading">
-            Moderation Queue is Clear!
-          </h3>
-          <p className="text-xs text-slate-400 max-w-xs mx-auto">
-            All submitted merchant reels have been reviewed and published to the live feed.
-          </p>
+        <div className="space-y-6">
+          <AdminModerationDesk reels={pendingReels} onRefresh={loadData} />
+          <AdminMerchantsDesk merchants={merchants} onRefresh={loadData} />
         </div>
       )}
     </div>

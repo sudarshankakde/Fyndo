@@ -466,3 +466,34 @@
   "message": "Reel approved and pushed to live discovery feed."
 }
 ```
+
+### 5.3 Platform Health & Overview Stats
+- **Endpoint**: `GET /admin/stats`
+- **Auth**: Required (`ROLE_SUPER_ADMIN`)
+- **Response `200 OK`**:
+```json
+{
+  "success": true,
+  "data": {
+    "total_merchants": 24,
+    "total_users": 150,
+    "total_reels": 30,
+    "total_redemptions": 48,
+    "total_discount_applied": 14200.00,
+    "pending_moderation_count": 2
+  }
+}
+```
+
+### 5.4 Admin Merchants Management
+- **Endpoints**:
+  - `GET /admin/merchants`: List all stores with KYC status, owner phone, staff credentials, and reels count.
+  - `POST /admin/merchants`: Direct onboarding of store with owner account and cashier PIN.
+  - `PUT /admin/merchants/:id`: Update business details, GPS coordinates, address, and KYC status.
+  - `PUT /admin/merchants/:id/staff`: Set or reset cashier name, phone, and 6-digit scanner PIN.
+
+### 5.5 Admin Reels & Offers Desk
+- **Endpoints**:
+  - `GET /admin/reels?status=ALL|APPROVED|PENDING_MODERATION|REJECTED`: List all platform video reels.
+  - `POST /admin/reels`: Direct publication of an approved reel with attached coupon template.
+

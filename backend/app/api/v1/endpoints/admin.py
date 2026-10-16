@@ -1,15 +1,25 @@
 import uuid
-from typing import List
-from fastapi import APIRouter, Depends, HTTPException, status
+from typing import List, Optional
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 from app.api.v1.endpoints.auth import get_current_user
 from app.core.database import get_db
 from app.models.reel import Reel, ReelStatus
 from app.models.user import User, UserRole
-from app.schemas.admin import AdminReelListItem, ModerationDecisionRequest
+from app.schemas.admin import (
+    AdminMerchantCreateRequest,
+    AdminMerchantDetail,
+    AdminMerchantUpdateRequest,
+    AdminReelCreateRequest,
+    AdminReelListItem,
+    AdminReelUpdateRequest,
+    AdminStaffUpdateRequest,
+    AdminStatsResponse,
+    ModerationDecisionRequest,
+)
 from app.schemas.common import ResponseEnvelope
+from app.services.admin_service import AdminService
 
 router = APIRouter()
 
@@ -24,50 +34,73 @@ async def get_current_admin(current_user: User = Depends(get_current_user)) -> U
     return current_user
 
 
+@router.get("/admin/stats", response_model=ResponseEnvelope[AdminStatsResponse])
+async def get_admin_stats(
+    admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Platform health overview metrics and counts."""
+    stats = await AdminService.get_platform_stats(db)
+    return ResponseEnvelope(data=stats)
+
+
+@router.get("/admin/merchants", response_model=ResponseEnvelope[List[AdminMerchantDetail]])
+async def list_admin_merchants(
+    admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Lists all registered merchants with KYC status, staff and reel counts."""
+    merchants = await AdminService.list_merchants(db)
+    return ResponseEnvelope(data=merchants)
+
+
+@router.post("/admin/merchants", response_model=ResponseEnvelope[AdminMerchantDetail])
+async def create_admin_merchant(
+    payload: AdminMerchantCreateRequest,
+    admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Creates a new merchant store directly with associated owner and staff PIN."""
+    merchant = await AdminService.create_merchant(payload, db)
+    return ResponseEnvelope(data=merchant, message="Merchant store registered successfully.")
+
+
+@router.put("/admin/merchants/{merchant_id}", response_model=ResponseEnvelope[dict])
+async def update_admin_merchant(
+    merchant_id: uuid.UUID,
+    payload: AdminMerchantUpdateRequest,
+    admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Updates merchant parameters (business name, location, address, KYC status)."""
+    updated = await AdminService.update_merchant(merchant_id, payload, db)
+    if not updated:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Merchant not found.")
+    return ResponseEnvelope(data={"merchant_id": str(merchant_id)}, message="Merchant updated successfully.")
+
+
+@router.put("/admin/merchants/{merchant_id}/staff", response_model=ResponseEnvelope[dict])
+async def update_admin_merchant_staff(
+    merchant_id: uuid.UUID,
+    payload: AdminStaffUpdateRequest,
+    admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Sets or resets the 6-digit scanner PIN and staff name for a merchant terminal."""
+    staff = await AdminService.update_staff_pin(merchant_id, payload, db)
+    return ResponseEnvelope(
+        data={"staff_id": str(staff.id), "staff_name": staff.staff_name},
+        message="Staff terminal credentials updated successfully."
+    )
+
+
 @router.get("/admin/moderation/reels", response_model=ResponseEnvelope[List[AdminReelListItem]])
 async def list_pending_reels(
     admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db)
 ):
     """Lists all reels currently queued in PENDING_MODERATION state."""
-    stmt = (
-        select(Reel)
-        .options(selectinload(Reel.merchant), selectinload(Reel.coupon_template))
-        .where(Reel.status == ReelStatus.PENDING_MODERATION)
-        .where(Reel.deleted_at.is_(None))
-        .order_by(Reel.created_at.asc())
-    )
-    res = await db.execute(stmt)
-    reels = res.scalars().all()
-
-    items: List[AdminReelListItem] = []
-    for r in reels:
-        def get_val(v):
-            return v.value if hasattr(v, "value") else str(v) if v is not None else None
-
-        m = r.merchant
-        ct = r.coupon_template
-        items.append(
-            AdminReelListItem(
-                id=r.id,
-                title=r.title,
-                video_url=r.video_url,
-                thumbnail_url=r.thumbnail_url,
-                duration_seconds=r.duration_seconds,
-                audio_type=get_val(r.audio_type),
-                status=get_val(r.status),
-                merchant_id=m.id if m else uuid.uuid4(),
-                merchant_name=m.business_name if m else "Unknown",
-                sector=get_val(m.sector) if m else "GENERAL",
-                city=m.city if m else "Nagpur",
-                coupon_title=ct.title if ct else None,
-                discount_type=get_val(ct.discount_type) if ct else None,
-                discount_value=float(ct.discount_value) if ct else None,
-                min_order_amount=float(ct.min_order_amount) if ct else None,
-                validity_days=ct.validity_days if ct else None
-            )
-        )
-
+    items = await AdminService.list_all_reels(status="PENDING_MODERATION", db=db)
     return ResponseEnvelope(data=items)
 
 
@@ -95,13 +128,29 @@ async def decide_reel_moderation(
         reel.rejection_reason = payload.rejection_reason or "Violated content or audio guidelines."
         message = "Reel rejected."
     else:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Decision must be either 'APPROVE' or 'REJECT'."
-        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Decision must be 'APPROVE' or 'REJECT'.")
 
     status_str = reel.status.value if hasattr(reel.status, "value") else str(reel.status)
-    return ResponseEnvelope(
-        data={"reel_id": str(reel.id), "status": status_str},
-        message=message
-    )
+    return ResponseEnvelope(data={"reel_id": str(reel.id), "status": status_str}, message=message)
+
+
+@router.get("/admin/reels", response_model=ResponseEnvelope[List[AdminReelListItem]])
+async def list_all_reels_admin(
+    status: Optional[str] = Query(None, description="ALL, PENDING_MODERATION, APPROVED, REJECTED"),
+    admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Lists all reels across the platform with optional status filter."""
+    items = await AdminService.list_all_reels(status=status, db=db)
+    return ResponseEnvelope(data=items)
+
+
+@router.post("/admin/reels", response_model=ResponseEnvelope[dict])
+async def create_admin_reel(
+    payload: AdminReelCreateRequest,
+    admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Creates a new approved reel with attached coupon template directly."""
+    reel_id = await AdminService.create_reel(payload, db)
+    return ResponseEnvelope(data={"reel_id": str(reel_id)}, message="Reel and offer published to live feed.")

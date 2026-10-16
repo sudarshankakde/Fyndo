@@ -20,9 +20,72 @@ export interface AdminPendingReel {
   validity_days?: number | null
 }
 
+export interface AdminStats {
+  total_merchants: number
+  total_users: number
+  total_reels: number
+  total_redemptions: number
+  total_discount_applied: number
+  pending_moderation_count: number
+}
+
+export interface AdminMerchantItem {
+  id: string
+  business_name: string
+  sector: string
+  address_text: string
+  city: string
+  latitude: number
+  longitude: number
+  owner_phone: string
+  kyc_status: string
+  staff_name?: string | null
+  staff_phone?: string | null
+  reels_count: number
+  created_at: string
+}
+
+export interface CreateMerchantPayload {
+  owner_phone: string
+  business_name: string
+  sector: string
+  address_text: string
+  city: string
+  latitude: number
+  longitude: number
+  gstin?: string
+  staff_name?: string
+  staff_pin?: string
+}
+
+export interface CreateReelPayload {
+  merchant_id: string
+  title: string
+  video_url: string
+  thumbnail_url: string
+  duration_seconds: number
+  coupon_title: string
+  discount_type: string
+  discount_value: number
+  validity_days: number
+  min_order_amount: number
+}
+
 export const adminService = {
+  async getStats(): Promise<AdminStats> {
+    const res = await apiClient.get<ResponseEnvelope<AdminStats>>('/admin/stats')
+    return res.data.data
+  },
+
   async getPendingReels(): Promise<AdminPendingReel[]> {
     const res = await apiClient.get<ResponseEnvelope<AdminPendingReel[]>>('/admin/moderation/reels')
+    return res.data.data
+  },
+
+  async getAllReels(status?: string): Promise<AdminPendingReel[]> {
+    const res = await apiClient.get<ResponseEnvelope<AdminPendingReel[]>>('/admin/reels', {
+      params: { status },
+    })
     return res.data.data
   },
 
@@ -33,6 +96,43 @@ export const adminService = {
         decision,
         rejection_reason: rejectionReason,
       }
+    )
+    return res.data.data
+  },
+
+  async createReel(payload: CreateReelPayload) {
+    const res = await apiClient.post<ResponseEnvelope<{ reel_id: string }>>(
+      '/admin/reels',
+      payload
+    )
+    return res.data.data
+  },
+
+  async getMerchants(): Promise<AdminMerchantItem[]> {
+    const res = await apiClient.get<ResponseEnvelope<AdminMerchantItem[]>>('/admin/merchants')
+    return res.data.data
+  },
+
+  async createMerchant(payload: CreateMerchantPayload): Promise<AdminMerchantItem> {
+    const res = await apiClient.post<ResponseEnvelope<AdminMerchantItem>>(
+      '/admin/merchants',
+      payload
+    )
+    return res.data.data
+  },
+
+  async updateMerchant(merchantId: string, payload: Partial<CreateMerchantPayload>) {
+    const res = await apiClient.put<ResponseEnvelope<{ merchant_id: string }>>(
+      `/admin/merchants/${merchantId}`,
+      payload
+    )
+    return res.data.data
+  },
+
+  async updateStaff(merchantId: string, payload: { staff_name: string; phone: string; pin: string }) {
+    const res = await apiClient.put<ResponseEnvelope<{ staff_id: string; staff_name: string }>>(
+      `/admin/merchants/${merchantId}/staff`,
+      payload
     )
     return res.data.data
   },
