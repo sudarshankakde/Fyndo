@@ -4,6 +4,20 @@ from typing import Any, Dict
 import cloudinary.utils
 from app.core.config import settings
 
+ALLOWED_UPLOAD_TARGETS = {
+    "reels": {"video", "image", "auto"},
+    "kyc": {"image", "auto"},
+}
+
+
+def validate_upload_target(folder: str, resource_type: str) -> tuple[str, str]:
+    normalized_folder = folder.strip().lower()
+    normalized_resource = resource_type.strip().lower()
+    allowed_resources = ALLOWED_UPLOAD_TARGETS.get(normalized_folder)
+    if not allowed_resources or normalized_resource not in allowed_resources:
+        raise ValueError("Unsupported upload folder/resource type combination.")
+    return normalized_folder, normalized_resource
+
 
 class CloudinaryService:
     @staticmethod
@@ -12,6 +26,7 @@ class CloudinaryService:
         Generates signed parameters for direct client upload to Cloudinary.
         Bypasses server file buffering completely.
         """
+        folder, resource_type = validate_upload_target(folder, resource_type)
         timestamp = int(time.time())
         params_to_sign = {
             "folder": f"fyndo/{folder}",

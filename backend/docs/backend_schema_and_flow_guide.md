@@ -14,7 +14,7 @@
 ```mermaid
 erDiagram
     users ||--o| merchants : "owns (1:1)"
-    merchants ||--o| merchant_staff : "employs (max 1 in beta)"
+    merchants ||--o{ merchant_staff : "employs"
     merchants ||--o{ reels : "publishes (1:N)"
     reels ||--|| coupon_templates : "attaches (1:1)"
     coupon_templates ||--o{ user_coupons : "generates claims (1:N)"
@@ -22,6 +22,7 @@ erDiagram
     user_coupons ||--o| redemptions_ledger : "settled by (1:1)"
     merchants ||--o{ redemptions_ledger : "redeems at (1:N)"
     merchant_staff ||--o{ redemptions_ledger : "verified by (1:N)"
+    reels ||--o{ reel_views : "records (1:N)"
 ```
 
 ---
@@ -66,11 +67,11 @@ CREATE TABLE merchants (
 ```
 
 #### 3. `merchant_staff`
-Store cashier accounts for in-store QR code validation. (Enforces **max 1 cashier** per store in Beta).
+Store cashier accounts for in-store QR code validation. Staff records have an explicit active/inactive lifecycle.
 ```sql
 CREATE TABLE merchant_staff (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    merchant_id UUID UNIQUE NOT NULL REFERENCES merchants(id) ON DELETE CASCADE,
+    merchant_id UUID NOT NULL REFERENCES merchants(id) ON DELETE CASCADE,
     staff_name VARCHAR(100) NOT NULL,
     phone VARCHAR(15) NOT NULL,
     pin_hash VARCHAR(255) NOT NULL,               -- Bcrypt hash of 6-digit staff PIN
@@ -130,6 +131,7 @@ CREATE TABLE user_coupons (
     claimed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     expires_at TIMESTAMPTZ NOT NULL,
     redeemed_at TIMESTAMPTZ NULL,
+    backup_pin_used_at TIMESTAMPTZ NULL,
     redeemed_by_staff_id UUID NULL REFERENCES merchant_staff(id)
 );
 ```
@@ -142,10 +144,23 @@ CREATE TABLE redemptions_ledger (
     user_coupon_id UUID UNIQUE NOT NULL REFERENCES user_coupons(id),
     merchant_id UUID NOT NULL REFERENCES merchants(id),
     staff_id UUID NULL REFERENCES merchant_staff(id),
+    bill_amount NUMERIC(10, 2) NOT NULL,
     discount_applied NUMERIC(10, 2) NOT NULL,
     cashier_latitude DOUBLE PRECISION NULL,
     cashier_longitude DOUBLE PRECISION NULL,
     distance_from_shop_m INTEGER NULL,            -- Verified against 500m geofence perimeter
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+```
+
+#### 8. `reel_views`
+Records deduplicated authenticated or client-keyed views used to keep `reels.views_count` consistent.
+```sql
+CREATE TABLE reel_views (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    reel_id UUID NOT NULL REFERENCES reels(id) ON DELETE CASCADE,
+    user_id UUID NULL REFERENCES users(id) ON DELETE SET NULL,
+    viewer_key VARCHAR(128) NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 ```
@@ -186,7 +201,7 @@ sequenceDiagram
     User->>API: POST /api/v1/auth/otp/verify { phone, otp, lang: "hi" }
     API->>Redis: Verify OTP match & delete
     API->>DB: Query or Create User record
-    API-->>User: 200 OK { access_token (15m), refresh_token (30d), user }
+    API-->>User: 200 OK { access_token (15m), user } + HttpOnly fyndo_refresh_token cookie
 
     Note over Staff, DB: 2. Cashier Terminal PIN Login
     Staff->>API: POST /api/v1/auth/staff-login { store_phone, pin: "123456" }
@@ -194,6 +209,21 @@ sequenceDiagram
     API->>API: Verify Bcrypt Hash (pin, staff.pin_hash)
     API-->>Staff: 200 OK { access_token (Role: ROLE_CASHIER, merchant_id) }
 ```
+
+## 3. Issue-Driven API Contracts
+
+- `PATCH /api/v1/merchants/profile` updates only the authenticated merchant's editable store fields.
+- `PATCH /api/v1/merchants/kyc` accepts resubmission only while KYC is `REJECTED`; the existing rejection reason remains available until moderation.
+- `GET /api/v1/admin/moderation/merchants` and
+  `POST /api/v1/admin/moderation/merchants/{id}/decision` are restricted to `SUPER_ADMIN`.
+- `POST /api/v1/reels` requires approved merchant KYC. `GET /api/v1/reels/mine`,
+  `GET/PATCH/DELETE /api/v1/reels/{id}`, and `POST /api/v1/reels/{id}/view` provide
+  merchant lifecycle, public retrieval, soft deletion, and deduplicated view tracking.
+- `POST /api/v1/redemptions/verify` requires a positive `bill_amount`; percentage and
+  flat discounts are capped at the bill amount and minimum-order rules are enforced.
+  `POST /api/v1/redemptions/verify-pin` applies the same checks with rate-limited backup PINs.
+- Refresh tokens are issued in an `HttpOnly` cookie with `SameSite=Lax` in development
+  and `SameSite=Strict; Secure` in production. Clients should send requests with credentials.
 
 ---
 

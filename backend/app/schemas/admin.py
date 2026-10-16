@@ -9,6 +9,11 @@ class ModerationDecisionRequest(BaseModel):
     rejection_reason: Optional[str] = None
 
 
+class MerchantKycDecisionRequest(BaseModel):
+    decision: str = Field(..., description="APPROVE or REJECT")
+    rejection_reason: Optional[str] = Field(None, max_length=500)
+
+
 class AdminReelListItem(BaseModel):
     id: uuid.UUID
     title: str
@@ -104,4 +109,3 @@ class AdminStaffUpdateRequest(BaseModel):
     staff_name: str = Field(..., min_length=2, max_length=100)
     phone: str = Field(..., description="+91XXXXXXXXXX")
     pin: str = Field(..., min_length=6, max_length=6)
-

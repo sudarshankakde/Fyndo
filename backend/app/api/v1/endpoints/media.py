@@ -6,7 +6,7 @@ from app.api.v1.endpoints.auth import get_current_user
 from app.models.user import User
 from app.schemas.common import ResponseEnvelope
 from app.schemas.media import SignUploadRequest, SignUploadResponse
-from app.services.cloudinary_service import CloudinaryService
+from app.services.cloudinary_service import CloudinaryService, validate_upload_target
 
 router = APIRouter()
 
@@ -24,10 +24,11 @@ async def get_upload_signature(
     Generates a secure cryptographic signature allowing direct client uploads
     to Cloudinary. Bypasses backend video bandwidth consumption.
     """
-    params = CloudinaryService.generate_upload_signature(
-        folder=request.folder,
-        resource_type=request.resource_type
-    )
+    try:
+        folder, resource_type = validate_upload_target(request.folder, request.resource_type)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    params = CloudinaryService.generate_upload_signature(folder=folder, resource_type=resource_type)
     return ResponseEnvelope(
         data=SignUploadResponse(**params),
         message="Upload signature generated"
@@ -38,12 +39,18 @@ async def get_upload_signature(
 async def upload_media_file(
     file: UploadFile = File(...),
     folder: str = Form("reels"),
+    current_user: User = Depends(get_current_user),
 ):
     """
     Direct file upload endpoint for user reels and store media.
     Stores the uploaded video/image in the local uploads directory
     and returns an accessible URL for streaming and thumbnail preview.
     """
+    try:
+        folder, _ = validate_upload_target(folder, "image" if file.content_type and file.content_type.startswith("image/") else "video")
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
     if not file.filename:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -79,4 +86,3 @@ async def upload_media_file(
         },
         message="File uploaded successfully."
     )
-

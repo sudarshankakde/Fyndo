@@ -3,8 +3,10 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 from app.api.v1.endpoints.auth import get_current_user
 from app.core.database import get_db
+from app.models.merchant import KycStatus, Merchant
 from app.models.reel import Reel, ReelStatus
 from app.models.user import User, UserRole
 from app.schemas.admin import (
@@ -16,6 +18,7 @@ from app.schemas.admin import (
     AdminReelUpdateRequest,
     AdminStaffUpdateRequest,
     AdminStatsResponse,
+    MerchantKycDecisionRequest,
     ModerationDecisionRequest,
 )
 from app.schemas.common import ResponseEnvelope
@@ -52,6 +55,77 @@ async def list_admin_merchants(
     """Lists all registered merchants with KYC status, staff and reel counts."""
     merchants = await AdminService.list_merchants(db)
     return ResponseEnvelope(data=merchants)
+
+
+@router.get("/admin/moderation/merchants")
+async def list_merchant_kyc(
+    status_filter: Optional[str] = Query(None, alias="status"),
+    admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    stmt = (
+        select(Merchant)
+        .options(selectinload(Merchant.owner))
+        .order_by(Merchant.created_at.asc())
+    )
+    if status_filter:
+        try:
+            stmt = stmt.where(Merchant.kyc_status == KycStatus(status_filter.upper()))
+        except ValueError:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid KYC status.")
+    merchants = (await db.execute(stmt)).scalars().all()
+    return ResponseEnvelope(
+        data=[
+            {
+                "id": merchant.id,
+                "business_name": merchant.business_name,
+                "sector": merchant.sector.value if hasattr(merchant.sector, "value") else str(merchant.sector),
+                "city": merchant.city,
+                "kyc_doc_url": merchant.kyc_doc_url,
+                "kyc_status": merchant.kyc_status.value if hasattr(merchant.kyc_status, "value") else str(merchant.kyc_status),
+                "kyc_rejection_reason": merchant.kyc_rejection_reason,
+                "owner_phone": merchant.owner.phone if merchant.owner else "",
+                "submitted_at": merchant.created_at,
+            }
+            for merchant in merchants
+        ]
+    )
+
+
+@router.post("/admin/moderation/merchants/{merchant_id}/decision")
+async def decide_merchant_kyc(
+    merchant_id: uuid.UUID,
+    payload: MerchantKycDecisionRequest,
+    admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    merchant = (await db.execute(select(Merchant).where(Merchant.id == merchant_id))).scalars().first()
+    if not merchant:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Merchant not found.")
+
+    decision = payload.decision.upper()
+    if decision == "APPROVE":
+        merchant.kyc_status = KycStatus.APPROVED
+        merchant.kyc_rejection_reason = None
+        message = "Merchant KYC approved."
+    elif decision == "REJECT":
+        if not payload.rejection_reason:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="A rejection reason is required.")
+        merchant.kyc_status = KycStatus.REJECTED
+        merchant.kyc_rejection_reason = payload.rejection_reason
+        message = "Merchant KYC rejected."
+    else:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Decision must be 'APPROVE' or 'REJECT'.")
+
+    await db.flush()
+    return ResponseEnvelope(
+        data={
+            "merchant_id": str(merchant.id),
+            "kyc_status": merchant.kyc_status.value,
+            "rejection_reason": merchant.kyc_rejection_reason,
+        },
+        message=message,
+    )
 
 
 @router.post("/admin/merchants", response_model=ResponseEnvelope[AdminMerchantDetail])

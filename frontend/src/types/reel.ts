@@ -34,4 +34,5 @@ export interface FeedQueryParams {
   radius_km: number
   sector?: string
   limit?: number
+  cursor?: string
 }

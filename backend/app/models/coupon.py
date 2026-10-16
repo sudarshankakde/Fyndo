@@ -94,6 +94,7 @@ class UserCoupon(Base):
         index=True
     )
     redeemed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
+    backup_pin_used_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
     redeemed_by_staff_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("merchant_staff.id"),
@@ -130,6 +131,7 @@ class RedemptionsLedger(Base):
         ForeignKey("merchant_staff.id"),
         nullable=True
     )
+    bill_amount: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False, default=0)
     discount_applied: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
     cashier_latitude: Mapped[float] = mapped_column(Float, nullable=True)
     cashier_longitude: Mapped[float] = mapped_column(Float, nullable=True)

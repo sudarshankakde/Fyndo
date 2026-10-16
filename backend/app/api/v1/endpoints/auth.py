@@ -1,6 +1,6 @@
 import uuid
 from typing import Annotated, Any, Dict, Optional
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -98,13 +98,13 @@ async def send_otp(request: OtpSendRequest):
     response_data = OtpSendResponse(
         phone=request.phone,
         expires_in_seconds=120,
-        test_otp=test_otp
+        test_otp=test_otp if settings.ENVIRONMENT.lower() != "production" else None
     )
     return ResponseEnvelope(data=response_data, message=msg)
 
 
 @router.post("/auth/otp/verify", response_model=ResponseEnvelope[AuthTokenResponse])
-async def verify_otp(request: OtpVerifyRequest, db: AsyncSession = Depends(get_db)):
+async def verify_otp(request: OtpVerifyRequest, response: Response, db: AsyncSession = Depends(get_db)):
     """Verifies the 6-digit OTP and returns signed JWT access & refresh tokens."""
     data = await AuthService.verify_otp_and_login(
         phone=request.phone,
@@ -112,41 +112,71 @@ async def verify_otp(request: OtpVerifyRequest, db: AsyncSession = Depends(get_d
         preferred_language=request.preferred_language,
         db=db
     )
+    _set_refresh_cookie(response, data.refresh_token)
     return ResponseEnvelope(data=data, message="Authentication successful")
 
 
 @router.post("/auth/staff-login", response_model=ResponseEnvelope[StaffLoginResponse])
 @router.post("/auth/staff-pin", response_model=ResponseEnvelope[StaffLoginResponse])
-async def staff_login(request: StaffLoginRequest, db: AsyncSession = Depends(get_db)):
+async def staff_login(request: StaffLoginRequest, response: Response, db: AsyncSession = Depends(get_db)):
     """Cashier/Staff terminal login using merchant phone and 6-digit staff PIN."""
     data = await AuthService.staff_login(request, db)
+    if data.refresh_token:
+        _set_refresh_cookie(response, data.refresh_token)
     return ResponseEnvelope(data=data, message="Staff terminal authenticated")
 
 
 
 @router.post("/auth/admin-login", response_model=ResponseEnvelope[AuthTokenResponse])
-async def admin_login(request: AdminLoginRequest, db: AsyncSession = Depends(get_db)):
+async def admin_login(request: AdminLoginRequest, response: Response, db: AsyncSession = Depends(get_db)):
     """Super Admin login using master credentials or registered admin account."""
     data = await AuthService.admin_login(request, db)
+    _set_refresh_cookie(response, data.refresh_token)
     return ResponseEnvelope(data=data, message="Super Admin authenticated")
 
 
 @router.post("/auth/refresh", response_model=ResponseEnvelope[RefreshTokenResponse])
-async def refresh_tokens(request: RefreshTokenRequest, db: AsyncSession = Depends(get_db)):
+async def refresh_tokens(
+    request: RefreshTokenRequest,
+    http_request: Request,
+    response: Response,
+    db: AsyncSession = Depends(get_db)
+):
     """Rotates refresh token and returns a new access & refresh token pair."""
-    data = await AuthService.refresh_tokens(request.refresh_token, db)
+    token = request.refresh_token or http_request.cookies.get("fyndo_refresh_token") or ""
+    data = await AuthService.refresh_tokens(token, db)
+    _set_refresh_cookie(response, data.refresh_token)
     return ResponseEnvelope(data=data, message="Token refreshed successfully")
 
 
 @router.post("/auth/logout", response_model=ResponseEnvelope[dict])
 async def logout(
+    http_request: Request,
+    response: Response,
     request: Optional[LogoutRequest] = None,
-    credentials: Annotated[Optional[HTTPAuthorizationCredentials], Depends(security_bearer)] = None
 ):
     """Revokes active refresh token and terminates session."""
-    if request and request.refresh_token:
-        await SessionService.revoke_refresh_session(request.refresh_token)
+    refresh_token = (
+        request.refresh_token
+        if request and request.refresh_token
+        else http_request.cookies.get("fyndo_refresh_token")
+    )
+    if refresh_token:
+        await SessionService.revoke_refresh_session(refresh_token)
+    response.delete_cookie("fyndo_refresh_token", path=f"{settings.API_V1_STR}/auth")
     return ResponseEnvelope(data={"logged_out": True}, message="Logged out successfully")
+
+
+def _set_refresh_cookie(response: Response, refresh_token: str) -> None:
+    response.set_cookie(
+        key="fyndo_refresh_token",
+        value=refresh_token,
+        httponly=True,
+        secure=settings.ENVIRONMENT.lower() == "production",
+        samesite="strict" if settings.ENVIRONMENT.lower() == "production" else "lax",
+        max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 86400,
+        path=f"{settings.API_V1_STR}/auth",
+    )
 
 
 @router.get("/auth/me", response_model=ResponseEnvelope[UserOut])

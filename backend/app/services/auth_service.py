@@ -136,7 +136,14 @@ class AuthService:
             role="ROLE_CASHIER",
             extra_claims={"merchant_id": str(merchant.id), "business_name": merchant.business_name}
         )
-        ref_token = create_refresh_token(subject=str(staff.id), role="ROLE_CASHIER")
+        ref_token = create_refresh_token(
+            subject=str(staff.id),
+            role="ROLE_CASHIER",
+            extra_claims={
+                "merchant_id": str(merchant.id),
+                "business_name": merchant.business_name,
+            },
+        )
         await SessionService.store_refresh_session(ref_token, str(staff.id), "ROLE_CASHIER")
 
         user_out = UserOut(
@@ -164,7 +171,7 @@ class AuthService:
     async def admin_login(cls, request: AdminLoginRequest, db: AsyncSession) -> AuthTokenResponse:
         """Authenticates Super Admin via admin credentials."""
         identifier = request.identifier.strip()
-        is_master = (
+        is_master = settings.ENVIRONMENT.lower() != "production" and (
             (identifier == settings.SUPER_ADMIN_IDENTIFIER or identifier == "admin@fyndo.in")
             and request.password == settings.SUPER_ADMIN_PASSWORD
         )
@@ -235,7 +242,22 @@ class AuthService:
         role = payload.get("role", "SHOPPER")
 
         if role == "ROLE_CASHIER":
-            new_access = create_access_token(subject=user_id_str, role=role)
+            staff_res = await db.execute(
+                select(MerchantStaff)
+                .options(selectinload(MerchantStaff.merchant))
+                .where(MerchantStaff.id == uuid.UUID(user_id_str))
+            )
+            staff = staff_res.scalars().first()
+            if not staff or not staff.is_active or not staff.merchant:
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Staff account inactive.")
+            new_access = create_access_token(
+                subject=user_id_str,
+                role=role,
+                extra_claims={
+                    "merchant_id": str(staff.merchant_id),
+                    "business_name": staff.merchant.business_name,
+                },
+            )
         else:
             user_id = uuid.UUID(user_id_str)
             res = await db.execute(select(User).where(User.id == user_id))

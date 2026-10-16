@@ -1,11 +1,12 @@
 import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request, status
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from app.api.v1.api import api_router
 from app.core.config import settings
-from app.core.database import Base, engine
+from app.core.database import Base, engine, ensure_compatibility_schema
 from app.core.redis import close_redis_client, get_redis_client
 import app.models  # Ensure all SQLAlchemy models are registered
 
@@ -25,6 +26,7 @@ async def lifespan(app: FastAPI):
     try:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
+        await ensure_compatibility_schema()
         logger.info("PostgreSQL database tables verified and created successfully.")
     except Exception as e:
         logger.error(f"Database schema initialization notice: {e}")
@@ -65,15 +67,41 @@ app.add_middleware(
 @app.exception_handler(HTTPException)
 async def custom_http_exception_handler(request: Request, exc: HTTPException):
     """Formats all standard HTTPExceptions into standard ErrorEnvelope."""
+    detail = exc.detail if isinstance(exc.detail, str) else "Request could not be processed."
+    details = exc.detail if not isinstance(exc.detail, str) else None
     return JSONResponse(
         status_code=exc.status_code,
         content={
             "success": False,
             "error": {
                 "code": f"HTTP_{exc.status_code}",
-                "message": exc.detail
+                "message": detail,
+                "details": details
             }
         }
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    details = [
+        {
+            "field": ".".join(str(part) for part in error["loc"] if part != "body"),
+            "message": error["msg"],
+            "type": error["type"],
+        }
+        for error in exc.errors()
+    ]
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        content={
+            "success": False,
+            "error": {
+                "code": "VALIDATION_ERROR",
+                "message": "Request validation failed.",
+                "details": details,
+            },
+        },
     )
 
 

@@ -74,7 +74,7 @@ class AdminLoginRequest(BaseModel):
 
 
 class RefreshTokenRequest(BaseModel):
-    refresh_token: str = Field(..., description="Active 30-day JWT refresh token")
+    refresh_token: Optional[str] = Field(None, description="Optional legacy refresh token; secure cookie is preferred")
 
 
 class RefreshTokenResponse(BaseModel):

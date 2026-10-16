@@ -68,8 +68,8 @@ class AdminService:
                     longitude=m.longitude,
                     owner_phone=m.owner.phone if m.owner else "+910000000000",
                     kyc_status=val(m.kyc_status),
-                    staff_name=m.staff.staff_name if m.staff else None,
-                    staff_phone=m.staff.phone if m.staff else None,
+                    staff_name=m.staff[0].staff_name if m.staff else None,
+                    staff_phone=m.staff[0].phone if m.staff else None,
                     reels_count=len(active_reels),
                     created_at=m.created_at
                 )

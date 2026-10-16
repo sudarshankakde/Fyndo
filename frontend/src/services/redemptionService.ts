@@ -4,6 +4,7 @@ import { RedemptionVerifyResult } from '@/types/coupon'
 
 interface VerifyRedemptionRequest {
   qr_payload: string
+  bill_amount: number
   cashier_lat?: number
   cashier_lon?: number
 }

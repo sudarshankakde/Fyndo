@@ -18,6 +18,22 @@ export interface StaffCreateData {
   pin: string
 }
 
+export interface StaffItem {
+  id: string
+  staff_name: string
+  phone: string
+  is_active: boolean
+}
+
+export interface MerchantProfileUpdateData {
+  business_name?: string
+  address_text?: string
+  city?: string
+  latitude?: number
+  longitude?: number
+  gstin?: string
+}
+
 export interface CloudinarySignResponse {
   cloud_name: string
   api_key: string
@@ -52,6 +68,26 @@ export const merchantService = {
 
   async configureStaff(data: StaffCreateData) {
     const res = await apiClient.post<ResponseEnvelope<{ staff_id: string }>>('/merchants/staff', data)
+    return res.data.data
+  },
+
+  async getStaff(): Promise<StaffItem[]> {
+    const res = await apiClient.get<ResponseEnvelope<StaffItem[]>>('/merchants/staff')
+    return res.data.data
+  },
+
+  async updateStaff(staffId: string, data: Partial<StaffCreateData> & { is_active?: boolean }) {
+    const res = await apiClient.patch<ResponseEnvelope<StaffItem>>(`/merchants/staff/${staffId}`, data)
+    return res.data.data
+  },
+
+  async updateProfile(data: MerchantProfileUpdateData) {
+    const res = await apiClient.patch<ResponseEnvelope<MerchantProfileUpdateData>>('/merchants/profile', data)
+    return res.data.data
+  },
+
+  async resubmitKyc(data: MerchantProfileUpdateData & { kyc_doc_url?: string }) {
+    const res = await apiClient.patch<ResponseEnvelope<MerchantProfileUpdateData>>('/merchants/kyc', data)
     return res.data.data
   },
 

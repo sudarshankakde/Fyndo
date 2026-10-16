@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime
 from typing import Optional
 from pydantic import BaseModel, Field, field_validator
 
@@ -77,3 +78,25 @@ class ReelOut(BaseModel):
     coupon: Optional[CouponFeedSummary] = None
 
     model_config = {"from_attributes": True}
+
+
+class ReelManagementOut(BaseModel):
+    id: uuid.UUID
+    title: str
+    video_url: str
+    thumbnail_url: str
+    duration_seconds: int
+    status: str
+    rejection_reason: Optional[str] = None
+    views_count: int
+    allow_comments: bool
+    created_at: datetime
+    updated_at: datetime
+    deleted_at: Optional[datetime] = None
+
+
+class ReelUpdateRequest(BaseModel):
+    title: Optional[str] = Field(None, min_length=3, max_length=150)
+    video_url: Optional[str] = Field(None, min_length=5)
+    thumbnail_url: Optional[str] = Field(None, min_length=5)
+    allow_comments: Optional[bool] = None

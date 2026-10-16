@@ -66,3 +66,12 @@ class TotpService:
         """
         totp = pyotp.TOTP(secret, interval=60)
         return totp.verify(token, valid_window=1)
+
+    @staticmethod
+    def verify_backup_pin(secret: str, pin: str) -> bool:
+        totp = pyotp.TOTP(secret, interval=60)
+        for offset in (-1, 0, 1):
+            token = totp.at(int(time.time()) + offset * 60)
+            if token[:4] == pin:
+                return True
+        return False

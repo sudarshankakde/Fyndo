@@ -15,6 +15,7 @@ interface PosScannerCardProps {
 export const PosScannerCard: React.FC<PosScannerCardProps> = ({ staff }) => {
   const { t } = useTranslation()
   const [qrPayload, setQrPayload] = useState('')
+  const [billAmount, setBillAmount] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [redemptionResult, setRedemptionResult] = useState<RedemptionVerifyResult | null>(null)
@@ -31,12 +32,14 @@ export const PosScannerCard: React.FC<PosScannerCardProps> = ({ staff }) => {
       // Default to Nagpur Sitabuldi coordinates for cashier in beta
       const result = await redemptionService.verifyAndRedeem({
         qr_payload: qrPayload.trim(),
+        bill_amount: Number(billAmount),
         cashier_lat: 21.1458,
         cashier_lon: 79.0882,
       })
 
       setRedemptionResult(result)
       setQrPayload('')
+      setBillAmount('')
 
       // Celebration burst for store staff & customer!
       confetti({
@@ -62,6 +65,20 @@ export const PosScannerCard: React.FC<PosScannerCardProps> = ({ staff }) => {
           </Badge>
           <h2 className="text-xl font-bold font-heading text-white">{staff.businessName}</h2>
           <p className="text-xs text-slate-400">Cashier: {staff.staffName}</p>
+        </div>
+        <div>
+          <label className="text-xs font-mono text-stone-300 mb-1.5 block">
+            Bill Amount (₹)
+          </label>
+          <input
+            type="number"
+            min="0.01"
+            step="0.01"
+            required
+            value={billAmount}
+            onChange={(e) => setBillAmount(e.target.value)}
+            className="w-full rounded-lg border border-stone-800 bg-stone-950 p-3 text-sm text-stone-200 focus:outline-none focus:ring-1 focus:ring-amber-500/80"
+          />
         </div>
         <div className="h-12 w-12 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center">
           <ScanLine className="h-6 w-6 animate-pulse" />
@@ -110,7 +127,7 @@ export const PosScannerCard: React.FC<PosScannerCardProps> = ({ staff }) => {
           variant="primary"
           size="lg"
           className="w-full"
-          disabled={!qrPayload.trim() || isLoading}
+          disabled={!qrPayload.trim() || !billAmount || Number(billAmount) <= 0 || isLoading}
           isLoading={isLoading}
         >
           <Sparkles className="h-4 w-4 mr-2" />

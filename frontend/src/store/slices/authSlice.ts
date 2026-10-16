@@ -30,9 +30,7 @@ export const authSlice = createSlice({
       state.isAuthenticated = true
 
       localStorage.setItem('fyndo_token', action.payload.accessToken)
-      if (action.payload.refreshToken) {
-        localStorage.setItem('fyndo_refresh_token', action.payload.refreshToken)
-      }
+      localStorage.removeItem('fyndo_refresh_token')
       localStorage.setItem('fyndo_user', JSON.stringify(action.payload.user))
       localStorage.removeItem('fyndo_staff')
     },
@@ -43,6 +41,7 @@ export const authSlice = createSlice({
       state.isAuthenticated = true
 
       localStorage.setItem('fyndo_token', action.payload.accessToken)
+      localStorage.removeItem('fyndo_refresh_token')
       localStorage.setItem('fyndo_staff', JSON.stringify(action.payload))
       localStorage.removeItem('fyndo_user')
     },
@@ -54,7 +53,6 @@ export const authSlice = createSlice({
       state.isAuthenticated = false
 
       localStorage.removeItem('fyndo_token')
-      localStorage.removeItem('fyndo_refresh_token')
       localStorage.removeItem('fyndo_user')
       localStorage.removeItem('fyndo_staff')
     },

@@ -20,6 +20,7 @@ class DynamicQrResponse(BaseModel):
 
 class RedemptionVerifyRequest(BaseModel):
     qr_payload: str
+    bill_amount: float = Field(..., gt=0)
     cashier_lat: Optional[float] = None
     cashier_lon: Optional[float] = None
 
@@ -31,6 +32,39 @@ class RedemptionVerifyResponse(BaseModel):
     customer_name: Optional[str] = None
     coupon_title: str
     timestamp: datetime
+    bill_amount: float
+
+
+class PinRedemptionRequest(BaseModel):
+    user_coupon_id: uuid.UUID
+    backup_pin: str = Field(..., min_length=4, max_length=4)
+    bill_amount: float = Field(..., gt=0)
+    cashier_lat: Optional[float] = None
+    cashier_lon: Optional[float] = None
+
+
+class RedemptionHistoryItem(BaseModel):
+    redemption_id: uuid.UUID
+    coupon_id: uuid.UUID
+    coupon_title: str
+    merchant_id: uuid.UUID
+    merchant_name: str
+    staff_name: Optional[str] = None
+    discount_type: str
+    bill_amount: float
+    discount_applied: float
+    created_at: datetime
+
+
+class MerchantRedemptionItem(BaseModel):
+    redemption_id: uuid.UUID
+    coupon_id: uuid.UUID
+    coupon_title: str
+    shopper_name: Optional[str] = None
+    bill_amount: float
+    discount_applied: float
+    staff_id: Optional[uuid.UUID] = None
+    created_at: datetime
 
 
 class UserCouponWalletItem(BaseModel):
@@ -47,4 +81,3 @@ class UserCouponWalletItem(BaseModel):
     claimed_at: datetime
     expires_at: datetime
     is_expired: bool
-

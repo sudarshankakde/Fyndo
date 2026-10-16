@@ -64,7 +64,7 @@ class Merchant(Base):
 
     # Relationships
     owner = relationship("User", back_populates="merchant")
-    staff = relationship("MerchantStaff", back_populates="merchant", uselist=False)
+    staff = relationship("MerchantStaff", back_populates="merchant")
     reels = relationship("Reel", back_populates="merchant")
 
 
@@ -79,7 +79,6 @@ class MerchantStaff(Base):
     merchant_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("merchants.id", ondelete="CASCADE"),
-        unique=True,  # Max 1 staff per merchant enforced at database level
         nullable=False
     )
     staff_name: Mapped[str] = mapped_column(String(100), nullable=False)

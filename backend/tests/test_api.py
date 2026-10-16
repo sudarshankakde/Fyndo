@@ -118,7 +118,27 @@ async def test_complete_merchant_and_redemption_vertical_slice(async_client: Asy
     assert onboard_resp.status_code == 200
     merchant_id = onboard_resp.json()["data"]["id"]
 
-    # 2. Configure 1 Cashier Staff PIN
+    # 2. Admin approves merchant KYC before reel publishing
+    from app.core.config import settings
+    master_admin_resp = await async_client.post(
+        "/api/v1/auth/admin-login",
+        json={
+            "identifier": settings.SUPER_ADMIN_IDENTIFIER,
+            "password": settings.SUPER_ADMIN_PASSWORD,
+        },
+    )
+    assert master_admin_resp.status_code == 200
+    master_admin_headers = {
+        "Authorization": f"Bearer {master_admin_resp.json()['data']['access_token']}"
+    }
+    kyc_decision_resp = await async_client.post(
+        f"/api/v1/admin/moderation/merchants/{merchant_id}/decision",
+        json={"decision": "APPROVE"},
+        headers=master_admin_headers,
+    )
+    assert kyc_decision_resp.status_code == 200
+
+    # 3. Configure 1 Cashier Staff PIN
     staff_resp = await async_client.post(
         "/api/v1/merchants/staff",
         json={
@@ -130,7 +150,7 @@ async def test_complete_merchant_and_redemption_vertical_slice(async_client: Asy
     )
     assert staff_resp.status_code == 200
 
-    # 3. Create Reel & Food Sector Coupon (Max 5 days)
+    # 4. Create Reel & Food Sector Coupon (Max 5 days)
     reel_resp = await async_client.post(
         "/api/v1/reels",
         json={
@@ -154,7 +174,7 @@ async def test_complete_merchant_and_redemption_vertical_slice(async_client: Asy
 
     reel_id = reel_resp.json()["data"]["reel_id"]
 
-    # 4. Cashier Staff POS Login
+    # 5. Cashier Staff POS Login
     pos_login_resp = await async_client.post(
         "/api/v1/auth/staff-login",
         json={"store_phone": owner_phone, "pin": "123456"}
@@ -163,7 +183,7 @@ async def test_complete_merchant_and_redemption_vertical_slice(async_client: Asy
     pos_token = pos_login_resp.json()["data"]["access_token"]
     pos_headers = {"Authorization": f"Bearer {pos_token}"}
 
-    # 5. Admin Moderation: Setup Super Admin and approve reel
+    # 6. Admin Moderation: Setup Super Admin and approve reel
     import uuid
     from app.core.database import async_session_factory
     from app.models.user import User, UserRole
@@ -197,7 +217,7 @@ async def test_complete_merchant_and_redemption_vertical_slice(async_client: Asy
     assert dec_resp.status_code == 200
     assert dec_resp.json()["data"]["status"] == "APPROVED"
 
-    # 6. Shopper Discovery Feed: Approved reel is now discoverable!
+    # 7. Shopper Discovery Feed: Approved reel is now discoverable!
     feed_resp = await async_client.get("/api/v1/reels/feed?lat=21.1460&lon=79.0880&radius_km=5&limit=50")
     assert feed_resp.status_code == 200
     feed_items = feed_resp.json()["data"]
@@ -205,7 +225,7 @@ async def test_complete_merchant_and_redemption_vertical_slice(async_client: Asy
     matched_feed_reel = next(item for item in feed_items if item["id"] == reel_id)
     coupon_id = matched_feed_reel["coupon"]["id"]
 
-    # 7. Shopper Claims Coupon to Wallet
+    # 8. Shopper Claims Coupon to Wallet
     shopper_phone = f"+9196{suffix}"[:13]
     sh_s_resp = await async_client.post("/api/v1/auth/otp/send", json={"phone": shopper_phone})
     sh_v_resp = await async_client.post(
@@ -219,36 +239,35 @@ async def test_complete_merchant_and_redemption_vertical_slice(async_client: Asy
     assert claim_resp.status_code == 200
     user_coupon_id = claim_resp.json()["data"]["user_coupon_id"]
 
-    # 8. Shopper Views Wallet
+    # 9. Shopper Views Wallet
     wallet_resp = await async_client.get("/api/v1/coupons/wallet", headers=shopper_headers)
     assert wallet_resp.status_code == 200
     assert len(wallet_resp.json()["data"]) == 1
     assert wallet_resp.json()["data"][0]["status"] == "CLAIMED"
 
-    # 9. Shopper Generates Dynamic TOTP QR
+    # 10. Shopper Generates Dynamic TOTP QR
     qr_resp = await async_client.get(f"/api/v1/coupons/{user_coupon_id}/dynamic-qr", headers=shopper_headers)
     assert qr_resp.status_code == 200
     qr_payload = qr_resp.json()["data"]["qr_payload"]
 
-    # 10. Cashier Terminal Verifies & Redeems Coupon
+    # 11. Cashier Terminal Verifies & Redeems Coupon
     redeem_resp = await async_client.post(
         "/api/v1/redemptions/verify",
-        json={"qr_payload": qr_payload, "cashier_lat": 21.1458, "cashier_lon": 79.0882},
+        json={"qr_payload": qr_payload, "bill_amount": 500.0, "cashier_lat": 21.1458, "cashier_lon": 79.0882},
         headers=pos_headers
     )
     assert redeem_resp.status_code == 200
     assert redeem_resp.json()["data"]["status"] == "VERIFIED_AND_REDEEMED"
 
-    # 11. Replay Prevention: Attempting to reuse same QR fails
+    # 12. Replay Prevention: Attempting to reuse same QR fails
     replay_resp = await async_client.post(
         "/api/v1/redemptions/verify",
-        json={"qr_payload": qr_payload, "cashier_lat": 21.1458, "cashier_lon": 79.0882},
+        json={"qr_payload": qr_payload, "bill_amount": 500.0, "cashier_lat": 21.1458, "cashier_lon": 79.0882},
         headers=pos_headers
     )
     assert replay_resp.status_code == 409
 
-    # 12. Wallet reflects REDEEMED
+    # 13. Wallet reflects REDEEMED
     wallet_resp2 = await async_client.get("/api/v1/coupons/wallet", headers=shopper_headers)
     assert wallet_resp2.status_code == 200
     assert wallet_resp2.json()["data"][0]["status"] == "REDEEMED"
-

@@ -92,10 +92,11 @@ export const authService = {
     }
   },
 
-  async refreshToken(refreshToken: string): Promise<RefreshTokenResponseData> {
-    const res = await apiClient.post<ResponseEnvelope<RefreshTokenResponseData>>('/auth/refresh', {
-      refresh_token: refreshToken,
-    })
+  async refreshToken(refreshToken?: string): Promise<RefreshTokenResponseData> {
+    const res = await apiClient.post<ResponseEnvelope<RefreshTokenResponseData>>(
+      '/auth/refresh',
+      refreshToken ? { refresh_token: refreshToken } : {}
+    )
     return res.data.data
   },
 

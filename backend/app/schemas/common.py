@@ -8,6 +8,7 @@ class ResponseEnvelope(BaseModel, Generic[T]):
     success: bool = True
     data: Optional[T] = None
     message: str = "Operation completed successfully"
+    meta: Optional[dict[str, Any]] = None
 
 
 class ErrorDetail(BaseModel):

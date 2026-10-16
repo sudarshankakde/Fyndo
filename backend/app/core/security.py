@@ -55,7 +55,11 @@ def create_access_token(
     return encoded_jwt
 
 
-def create_refresh_token(subject: str, role: str) -> str:
+def create_refresh_token(
+    subject: str,
+    role: str,
+    extra_claims: Optional[Dict[str, Any]] = None
+) -> str:
     """Generates a long-lived JWT refresh token."""
     now = datetime.now(timezone.utc)
     expire = now + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
@@ -68,6 +72,8 @@ def create_refresh_token(subject: str, role: str) -> str:
         "iat": int(now.timestamp()),
         "exp": int(expire.timestamp())
     }
+    if extra_claims:
+        to_encode.update(extra_claims)
 
     encoded_jwt = jwt.encode(
         to_encode,
@@ -103,4 +109,3 @@ def decode_refresh_token(token: str) -> Optional[Dict[str, Any]]:
         return payload
     except jwt.PyJWTError:
         return None
-

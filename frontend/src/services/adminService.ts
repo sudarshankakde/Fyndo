@@ -45,6 +45,18 @@ export interface AdminMerchantItem {
   created_at: string
 }
 
+export interface AdminKycItem {
+  id: string
+  business_name: string
+  sector: string
+  city: string
+  kyc_doc_url: string
+  kyc_status: string
+  kyc_rejection_reason?: string | null
+  owner_phone: string
+  submitted_at: string
+}
+
 export interface CreateMerchantPayload {
   owner_phone: string
   business_name: string
@@ -110,6 +122,21 @@ export const adminService = {
 
   async getMerchants(): Promise<AdminMerchantItem[]> {
     const res = await apiClient.get<ResponseEnvelope<AdminMerchantItem[]>>('/admin/merchants')
+    return res.data.data
+  },
+
+  async getKycSubmissions(status?: 'PENDING' | 'APPROVED' | 'REJECTED'): Promise<AdminKycItem[]> {
+    const res = await apiClient.get<ResponseEnvelope<AdminKycItem[]>>('/admin/moderation/merchants', {
+      params: { status },
+    })
+    return res.data.data
+  },
+
+  async decideKyc(merchantId: string, decision: 'APPROVE' | 'REJECT', rejectionReason?: string) {
+    const res = await apiClient.post<ResponseEnvelope<{ merchant_id: string; kyc_status: string }>>(
+      `/admin/moderation/merchants/${merchantId}/decision`,
+      { decision, rejection_reason: rejectionReason },
+    )
     return res.data.data
   },
 

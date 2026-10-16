@@ -14,6 +14,10 @@ class OtpService:
         Generates and dispatches a 6-digit OTP to the phone number.
         Returns: (success, test_otp_if_dev, message)
         """
+        if settings.ENVIRONMENT.lower() == "production" and settings.SMS_GATEWAY_PROVIDER.lower() == "mock":
+            logger.error("Mock OTP provider is disabled while ENVIRONMENT=production")
+            return False, None, "OTP delivery is not configured for production."
+
         redis = await get_redis_client()
 
         # Check rate limit: max 3 requests per 10 minutes
@@ -34,7 +38,7 @@ class OtpService:
         await redis.expire(rate_key, 600)
 
         # Dispatch via gateway (or log if mock)
-        if settings.SMS_GATEWAY_PROVIDER == "mock":
+        if settings.SMS_GATEWAY_PROVIDER.lower() == "mock":
             logger.info(f"[DEV MOCK OTP] Sent code '{otp_code}' to phone '{phone}' via {channel}")
             return True, otp_code, "OTP sent successfully (Dev Mock Mode)"
         else:
