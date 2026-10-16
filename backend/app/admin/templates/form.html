@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit' if row_pk else 'New' }} {{ meta.singular }} · {{ panel_name }}{% endblock %}
+{% block heading %}{{ 'Edit' if row_pk else 'New' }} {{ meta.singular }}{% endblock %}
+{% block crumbs %}{{ meta.group }} · {{ meta.label }}{% endblock %}
+
+{% block content %}
+{% if errors %}
+<div class="flash flash-err">
+  <strong>Could not save this record:</strong>
+  <ul class="error-list">
+    {% for error in errors %}<li>{{ error }}</li>{% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+<form class="card" method="post"
+      action="/admin/{{ meta.key }}/{{ (row_pk ~ '/edit') if row_pk else 'new' }}">
+  <div class="card-body">
+    <div class="form-grid">
+      {% for field in fields %}
+      <div class="field {% if field.widget == 'textarea' %}wide{% endif %}">
+        <label for="f-{{ field.name }}">
+          {{ field.label }}{% if field.required %} <span class="req">*</span>{% endif %}
+        </label>
+
+        {% if field.widget == 'checkbox' %}
+        <div class="check-row">
+          <input type="checkbox" id="f-{{ field.name }}" name="{{ field.name }}"
+                 {% if field.checked %}checked{% endif %}>
+          <span class="hint">Enabled</span>
+        </div>
+
+        {% elif field.widget == 'select' %}
+        <select id="f-{{ field.name }}" name="{{ field.name }}" {% if field.required %}required{% endif %}>
+          {% if not field.required %}<option value="">— none —</option>{% endif %}
+          {% for option in field.options %}
+          <option value="{{ option.value }}" {% if option.value == field.value %}selected{% endif %}>{{ option.label }}</option>
+          {% endfor %}
+        </select>
+        {% if field.fk_label %}<span class="hint">Links to {{ field.fk_label }}.</span>{% endif %}
+
+        {% elif field.widget == 'datetime' %}
+        <input type="datetime-local" id="f-{{ field.name }}" name="{{ field.name }}"
+               value="{{ field.value }}" {% if field.required %}required{% endif %}>
+
+        {% elif field.widget == 'textarea' %}
+        <textarea id="f-{{ field.name }}" name="{{ field.name }}"
+                  {% if field.required %}required{% endif %}>{{ field.value }}</textarea>
+
+        {% else %}
+        <input type="{{ field.input_type }}" step="{{ field.step }}" id="f-{{ field.name }}"
+               name="{{ field.name }}" value="{{ field.value }}" {% if field.required %}required{% endif %}>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="form-actions">
+    <button class="btn btn-primary" type="submit">{{ 'Save changes' if row_pk else 'Create' }}</button>
+    <a class="btn" href="/admin/{{ meta.key }}{{ '/' ~ row_pk if row_pk else '' }}">Cancel</a>
+    <span class="spacer"></span>
+    {% if row_pk %}<span class="muted">{{ meta.pk.label }} · {{ row_pk }}</span>{% endif %}
+  </div>
+</form>
+{% endblock %}

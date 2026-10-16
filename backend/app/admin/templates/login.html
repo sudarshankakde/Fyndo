@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign in · {{ panel_name }}</title>
+  <link rel="stylesheet" href="/admin/static/admin.css">
+</head>
+<body>
+<div class="login-page">
+  <div class="login-card">
+    <div class="brand-mark">F</div>
+    <h1>Sign in to {{ panel_name }}</h1>
+    <p class="sub">Restricted to Fyndo super administrators.</p>
+
+    {% if error %}<div class="flash flash-err">{{ error }}</div>{% endif %}
+
+    <form method="post" action="/admin/login">
+      <input type="hidden" name="next" value="{{ next }}">
+      <div class="field">
+        <label for="identifier">Administrator ID</label>
+        <input id="identifier" name="identifier" type="text" autocomplete="username"
+               autofocus required placeholder="Phone number or admin email">
+      </div>
+      <div class="field">
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" autocomplete="current-password" required>
+      </div>
+      <button class="btn btn-primary" type="submit">Sign in</button>
+    </form>
+
+    <div class="login-foot">{{ environment }} environment · session expires after 8 hours</div>
+  </div>
+</div>
+</body>
+</html>

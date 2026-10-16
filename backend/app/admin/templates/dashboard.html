@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Dashboard · {{ panel_name }}{% endblock %}
+{% block heading %}Dashboard{% endblock %}
+{% block crumbs %}Live database overview{% endblock %}
+
+{% block content %}
+<div class="stat-grid">
+  {% for item in highlights %}
+  <a class="stat {{ item.tone }}" href="{{ item.href }}">
+    <div class="stat-label">{{ item.label }}</div>
+    <div class="stat-value">{{ item.value }}</div>
+  </a>
+  {% endfor %}
+</div>
+
+<div class="card">
+  <div class="card-head">
+    <h2>Tables</h2>
+    <span class="muted">{{ total_records }} records across {{ stats|length }} tables</span>
+  </div>
+  <div class="card-body">
+    <div class="tile-grid">
+      {% for item in stats %}
+      <a class="tile" href="/admin/{{ item.meta.key }}">
+        <div class="tile-group">{{ item.meta.group }}</div>
+        <div class="tile-label">{{ item.meta.label }}</div>
+        <div class="tile-value">{{ item.count }}</div>
+      </a>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endblock %}

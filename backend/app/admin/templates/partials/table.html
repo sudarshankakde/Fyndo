@@ -1,0 +1,65 @@
+{% set base = '/admin/' ~ meta.key %}
+{# Built with bare ``&`` — Jinja escapes it exactly once when interpolated. #}
+{% set query = 'q=' ~ (q|urlencode) ~ '&sort=' ~ sort ~ '&dir=' ~ dir %}
+<div class="card-head">
+  <span class="muted">
+    {{ total }} record{{ '' if total == 1 else 's' }}{% if q %} matching “{{ q }}”{% endif %}
+  </span>
+  <span class="muted">{{ meta.page_size }} per page</span>
+</div>
+
+<div class="table-wrap">
+  <table class="grid">
+    <thead>
+      <tr>
+        {% for column in meta.list_column_metas %}
+        {% set next_dir = 'asc' if (sort == column.name and dir == 'desc') else 'desc' %}
+        {% set href = base ~ '?' ~ query ~ '&sort=' ~ column.name ~ '&dir=' ~ next_dir %}
+        <th>
+          <a class="th-sort" href="{{ href }}" hx-get="{{ href }}" hx-target="#table-panel" hx-push-url="true">
+            {{ column.label }}{% if sort == column.name %}<span class="sort-dot">{{ '↑' if dir == 'asc' else '↓' }}</span>{% endif %}
+          </a>
+        </th>
+        {% endfor %}
+        <th class="col-actions">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        {% for cell in row.cells %}
+        <td class="{% if loop.first %}cell-lead{% endif %}">
+          {% if loop.first %}
+          <a href="{{ base }}/{{ row.pk }}">{{ cell.text }}</a>
+          {% elif cell.is_bool %}
+          <span class="badge {{ 'badge-good' if cell.flag else 'badge-muted' }}">{{ cell.text }}</span>
+          {% elif cell.is_empty %}
+          <span class="muted">—</span>
+          {% else %}
+          {{ cell.text }}
+          {% endif %}
+        </td>
+        {% endfor %}
+        <td class="col-actions"><a href="{{ base }}/{{ row.pk }}/edit">Edit</a></td>
+      </tr>
+      {% else %}
+      <tr>
+        <td class="empty" colspan="{{ meta.list_column_metas|length + 1 }}">No records found.</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% if page_count > 1 %}
+{% set prev_href = base ~ '?' ~ query ~ '&page=' ~ (page - 1) %}
+{% set next_href = base ~ '?' ~ query ~ '&page=' ~ (page + 1) %}
+<div class="pagination">
+  <a class="page-btn {% if page <= 1 %}disabled{% endif %}" href="{{ prev_href }}"
+     hx-get="{{ prev_href }}" hx-target="#table-panel" hx-push-url="true">Prev</a>
+  <span class="muted" style="padding:0 8px">Page {{ page }} of {{ page_count }}</span>
+  <a class="page-btn {% if page >= page_count %}disabled{% endif %}" href="{{ next_href }}"
+     hx-get="{{ next_href }}" hx-target="#table-panel" hx-push-url="true">Next</a>
+  <span class="page-info">{{ total }} records</span>
+</div>
+{% endif %}

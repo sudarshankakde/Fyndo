@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{{ panel_name }}{% endblock %}</title>
+  <link rel="stylesheet" href="/admin/static/admin.css">
+  <script src="/admin/static/htmx.min.js" defer></script>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <a class="brand" href="/admin/">
+      <span class="brand-mark">F</span>
+      <span>Fyndo<small>Control Room</small></span>
+    </a>
+    <nav>
+      <div class="nav-group">
+        <a class="nav-link {% if current_path in ['/admin', '/admin/'] %}active{% endif %}" href="/admin/">Dashboard</a>
+      </div>
+      {% for group in nav %}
+      <div class="nav-group">
+        <div class="nav-group-title">{{ group.name }}</div>
+        {% for item in group.models %}
+        <a class="nav-link {% if current_path.startswith('/admin/' ~ item.key) %}active{% endif %}"
+           href="/admin/{{ item.key }}">{{ item.label }}</a>
+        {% endfor %}
+      </div>
+      {% endfor %}
+    </nav>
+    <div class="sidebar-foot">
+      <strong>{{ admin.sub }}</strong>
+      Super Admin · <a href="/admin/logout" style="color:#93a3b8">Sign out</a>
+    </div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <div>
+        <h1>{% block heading %}{{ panel_name }}{% endblock %}</h1>
+        <div class="crumbs">{% block crumbs %}Back-office data browser{% endblock %}</div>
+      </div>
+      <span class="env-pill">{{ environment }}</span>
+    </header>
+
+    <main class="content">
+      {% if flash_ok %}<div class="flash flash-ok">{{ flash_ok }}</div>{% endif %}
+      {% if flash_err %}<div class="flash flash-err">{{ flash_err }}</div>{% endif %}
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+</div>
+</body>
+</html>

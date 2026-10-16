@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}{{ title }} · {{ panel_name }}{% endblock %}
+{% block heading %}{{ meta.singular }} detail{% endblock %}
+{% block crumbs %}{{ meta.group }} · {{ meta.label }}{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="card-head">
+    <div>
+      <h2>{{ title }}</h2>
+      <div class="muted" style="font-size:12.5px">{{ meta.pk.label }} · {{ row_pk }}</div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <a class="btn" href="/admin/{{ meta.key }}">Back to list</a>
+      <a class="btn btn-primary" href="/admin/{{ meta.key }}/{{ row_pk }}/edit">Edit</a>
+      <form method="post" action="/admin/{{ meta.key }}/{{ row_pk }}/delete"
+            hx-post="/admin/{{ meta.key }}/{{ row_pk }}/delete"
+            hx-confirm="Delete this row permanently? This cannot be undone.">
+        <button class="btn btn-danger" type="submit">Delete</button>
+      </form>
+    </div>
+  </div>
+
+  <dl class="detail-grid">
+    {% for field in fields %}
+    <dt>{{ field.label }}</dt>
+    <dd>
+      {% if field.is_bool %}
+      <span class="badge {{ 'badge-good' if field.flag else 'badge-muted' }}">{{ field.text }}</span>
+      {% elif field.is_json %}
+      <pre>{{ field.text }}</pre>
+      {% elif field.is_empty %}
+      <span class="muted">—</span>
+      {% else %}
+      {{ field.text }}
+      {% endif %}
+    </dd>
+    {% endfor %}
+  </dl>
+</div>
+{% endblock %}

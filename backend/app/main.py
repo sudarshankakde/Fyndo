@@ -5,6 +5,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from app.api.v1.api import api_router
+from app.admin import admin_router
+from app.admin.deps import RedirectToLogin, redirect_to_login_handler
 from app.core.config import settings
 from app.core.database import Base, engine, ensure_compatibility_schema
 from app.core.logging_config import configure_logging
@@ -122,6 +124,12 @@ app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
 # Register API Router
 app.include_router(api_router, prefix=settings.API_V1_STR)
+
+# HTML super-admin panel. It sits outside the API contract, keeps its own
+# session cookie, and redirects anonymous visitors to its own login form
+# instead of returning a JSON 401 envelope.
+app.add_exception_handler(RedirectToLogin, redirect_to_login_handler)
+app.include_router(admin_router)
 
 
 @app.get("/", include_in_schema=False)

@@ -130,8 +130,8 @@
 - **Request Body**:
 ```json
 {
-  "identifier": "+919999900000",
-  "password": "AdminFyndo@2026",
+  "identifier": "sudarshanakakde1111@gmail.com",
+  "password": "Qweasdzx@1#",
   "mfa_code": "123456"
 }
 ```
@@ -146,7 +146,7 @@
     "user": {
       "id": "admin-uuid",
       "phone": "+919999900000",
-      "email": "admin@fyndo.in",
+      "email": "sudarshanakakde1111@gmail.com",
       "full_name": "Regional Desk Admin",
       "role": "SUPER_ADMIN",
       "preferred_language": "en"

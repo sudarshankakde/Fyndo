@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}{{ meta.label }} · {{ panel_name }}{% endblock %}
+{% block heading %}{{ meta.label }}{% endblock %}
+{% block crumbs %}{{ meta.group }} · browse, edit and delete{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="card-head">
+    <form class="toolbar" style="flex:1" hx-get="/admin/{{ meta.key }}" hx-target="#table-panel"
+          hx-swap="innerHTML" hx-push-url="true">
+      <div class="search-box">
+        <input id="search-input" type="search" name="q" value="{{ q }}"
+               placeholder="{% if meta.search_columns %}Search {{ meta.label|lower }}…{% else %}No searchable columns on this table{% endif %}"
+               {% if not meta.search_columns %}disabled{% endif %}
+               hx-get="/admin/{{ meta.key }}" hx-target="#table-panel" hx-swap="innerHTML"
+               hx-push-url="true" hx-trigger="keyup changed delay:350ms, search">
+      </div>
+      <button class="btn" type="submit">Search</button>
+    </form>
+    <a class="btn btn-primary" href="/admin/{{ meta.key }}/new">+ New {{ meta.singular }}</a>
+  </div>
+
+  <div id="table-panel">
+    {% include "partials/table.html" %}
+  </div>
+</div>
+{% endblock %}

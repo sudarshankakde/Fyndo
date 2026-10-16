@@ -145,6 +145,22 @@ graph TD
   Expo push token, and unregisters it on sign-out. The unread badge is hydrated from
   `GET /notifications/unread-count`.
 
+### 2.8 Super-Admin Panel (`backend/app/admin/`)
+- **Purpose**: a server-rendered **HTML back office** so operators can see and edit every table
+  (full CRUD including delete) without SQL access. See `docs/17_Admin_Panel.md`.
+- **Stack**: FastAPI + **Jinja2** templates + **htmx 2.0.4** (vendored locally at
+  `app/admin/static/htmx.min.js` — no CDN, works offline) with a hand-written `admin.css`.
+- **Mounting**: a separate `APIRouter(prefix="/admin", include_in_schema=False)`, so it stays
+  outside the JSON API contract and the OpenAPI schema. Anonymous visitors are bounced to
+  `/admin/login` via a dedicated `RedirectToLogin` handler rather than the global JSON `401`.
+- **Auth**: its **own** signed session cookie (`fyndo_admin_session`, httpOnly, samesite=lax,
+  path `/admin`, 8-hour TTL) — deliberately **not** reusing `get_current_user`, so a leaked
+  shopper/merchant bearer token can never be replayed against the back office.
+- **Engine**: a generic CRUD engine (`registry.py`) that introspects SQLAlchemy mappers, so all
+  12 tables are served by one code path plus a small per-table config list (`configs.py`).
+- **Audit**: every create/update/delete emits `admin.create` / `admin.update` / `admin.delete`
+  through `audit_log(..., source="admin_panel")` into the `audit.log` stream.
+
 ---
 
 ## 3. Storage & Caching Architecture

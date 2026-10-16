@@ -172,7 +172,10 @@ class AuthService:
         """Authenticates Super Admin via admin credentials."""
         identifier = request.identifier.strip()
         is_master = settings.ENVIRONMENT.lower() != "production" and (
-            (identifier == settings.SUPER_ADMIN_IDENTIFIER or identifier == "admin@fyndo.in")
+            (
+                identifier == settings.SUPER_ADMIN_IDENTIFIER
+                or identifier.lower() == (settings.SUPER_ADMIN_EMAIL or "").lower()
+            )
             and request.password == settings.SUPER_ADMIN_PASSWORD
         )
 
@@ -203,7 +206,7 @@ class AuthService:
                 )
             user = User(
                 phone=settings.SUPER_ADMIN_IDENTIFIER,
-                email="admin@fyndo.in",
+                email=settings.SUPER_ADMIN_EMAIL,
                 full_name="Regional Desk Admin",
                 role=UserRole.SUPER_ADMIN,
                 password_hash=get_password_hash(settings.SUPER_ADMIN_PASSWORD),

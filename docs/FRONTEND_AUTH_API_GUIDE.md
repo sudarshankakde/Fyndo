@@ -49,7 +49,7 @@ In `development` mode, you don't need real SMS gateways. The backend returns `te
 | **Shopper** | `+919876543210` | Dev OTP from send response | Regular shopper discovery & coupon claims |
 | **Merchant Owner** | `+919876543210` | Dev OTP from send response | Store owner managing reels and staff |
 | **Counter Staff (POS)** | `+919876543210` (Store phone) | PIN: `123456` | Dedicated counter scanner terminal |
-| **Super Admin** | `+919999900000` or `admin@fyndo.in` | `AdminFyndo@2026` | Video moderation desk & KYC approval |
+| **Super Admin** | `+919999900000` or `sudarshanakakde1111@gmail.com` | `Qweasdzx@1#` | Video moderation desk & KYC approval |
 
 ---
 
@@ -171,8 +171,8 @@ In `development` mode, you don't need real SMS gateways. The backend returns `te
 - **Request Body**:
 ```json
 {
-  "identifier": "+919999900000",
-  "password": "AdminFyndo@2026",
+  "identifier": "sudarshanakakde1111@gmail.com",
+  "password": "Qweasdzx@1#",
   "mfa_code": "123456"
 }
 ```
@@ -188,7 +188,7 @@ In `development` mode, you don't need real SMS gateways. The backend returns `te
     "user": {
       "id": "admin-uuid",
       "phone": "+919999900000",
-      "email": "admin@fyndo.in",
+      "email": "sudarshanakakde1111@gmail.com",
       "full_name": "Regional Desk Admin",
       "role": "SUPER_ADMIN",
       "preferred_language": "en"
@@ -351,8 +351,8 @@ const staffSession = await authService.staffLogin('+919876543210', '123456')
 
 // 4. Admin Login
 const adminSession = await authService.adminLogin({
-  identifier: '+919999900000',
-  password: 'AdminFyndo@2026'
+  identifier: 'sudarshanakakde1111@gmail.com',
+  password: 'Qweasdzx@1#'
 })
 
 // 5. Refresh Tokens

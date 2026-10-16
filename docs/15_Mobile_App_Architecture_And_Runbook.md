@@ -159,4 +159,4 @@ cd e:\MyProjects\Fyndo\backend
 | **Cashier (Haldiram's)** | Store: `+919822011111` or Staff: `+919822099991` | `123456` | Haldiram's Sweets & Namkeen (Sitabuldi) |
 | **Cashier (Mahal Saree)** | Store: `+919822022222` or Staff: `+919822099992` | `123456` | Mahal Saree & Ethnic Hub |
 | **Cashier (Metro Shoes)**| Store: `+919822033333` or Staff: `+919822099993` | `123456` | Metro Footwear & Sneaker Lounge |
-| **Super Admin** | `+919999900000` / `admin@fyndo.in` | Master password configured in `.env` | Operations Desk (`/admin`) |
+| **Super Admin** | `+919999900000` / `sudarshanakakde1111@gmail.com` | Master password configured in `.env` | Operations Desk (`/admin`) |
