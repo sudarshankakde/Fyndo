@@ -82,10 +82,14 @@ Inspired by Stitch Project `6900660431147625086`:
 3. **Zero Jargon Rule**:
    - Customer-facing UI text uses warm, human-centric Indian market phrasing (e.g. *"Pass"*, *"Verified Store"*, *"Discount at Counter"*, *"Secret Club Drop"*).
    - Engineering implementation details (*TOTP, API, RBAC, Geofence algorithm, JSON, HTTP 403/500, Database, Beta*) are strictly prohibited in user-facing views.
-4. **Dynamic Safe Area Margins**:
-   - Dynamic top margin calculation: `top: Math.max(insets.top, 16) + 4`.
-   - Dynamic bottom tab bar height: `tabHeight = 58 + Math.max(insets.bottom, 8)`.
-   - Dynamic vertical reel item height: `itemHeight = windowHeight - tabHeight`.
+4. **Dynamic Safe Area Margins & Zero-Drift Geometry**:
+   - Dynamic top header offset: `top: Math.max(insets.top, 16) + 4`.
+   - Floating bottom tab bar height: `tabHeight = 58 + Math.max(insets.bottom, 8)`.
+   - Reel feed exact container measurement (`onLayout`): `FeedScreen` dynamically measures container `width` and `height`, passing exact pixel bounds (`feedHeight`) to each `ReelItem`.
+   - Pure Native Paging (`pagingEnabled={true}`): Eliminates `snapToInterval` conflicts on Android, guaranteeing zero layout shifts, zero cumulative drift, and zero multi-reel peeking.
+   - Smooth Vignette Gradients (`expo-linear-gradient`): Uses hardware-accelerated linear gradients (`rgba(10, 14, 26, 0.75)` to transparent at top, transparent to `rgba(10, 14, 26, 0.98)` at bottom) replacing hard rectangular boxes.
+   - Dynamic Overlay Heights: `ReelOverlay` sits at `paddingBottom: tabHeight + 10` and `RightActionRail` sits at `bottom: tabHeight + 16` so all interactive elements float crisply above the bottom navigation bar.
+   - Constrained Pill Dimensions: Category filter bars (`NotificationFilterBar`, `ExploreScreen`) use fixed-height containers (`height: 46`, `height: 34`) and `alignItems: 'center'` to guarantee pills never stretch vertically into cards on Android flexbox.
    - Scroll views include `paddingBottom: 110` so content scrolls clear of floating system navigation bars.
 
 ---
