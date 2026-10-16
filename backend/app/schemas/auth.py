@@ -32,6 +32,8 @@ class UserOut(BaseModel):
     id: uuid.UUID
     phone: str
     full_name: Optional[str] = None
+    username: Optional[str] = None
+    profile_image_url: Optional[str] = None
     email: Optional[str] = None
     role: str
     preferred_language: str = "en"
@@ -89,6 +91,8 @@ class LogoutRequest(BaseModel):
 
 class UserProfileUpdateRequest(BaseModel):
     full_name: Optional[str] = Field(None, max_length=100)
+    username: Optional[str] = Field(None, min_length=3, max_length=30, pattern=r"^[a-zA-Z0-9._]+$")
+    profile_image_url: Optional[str] = Field(None, max_length=500)
     email: Optional[str] = Field(None, max_length=255)
     preferred_language: Optional[str] = Field(None, description="en, hi, or mr")
 

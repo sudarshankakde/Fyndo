@@ -72,12 +72,30 @@ class ReelOut(BaseModel):
     thumbnail_url: str
     duration_seconds: int
     views_count: int
+    likes_count: int = 0
+    is_liked: bool = False
     allow_comments: bool = True
-    comments_count: int = 18
+    comments_count: int = 0
     merchant: MerchantFeedSummary
     coupon: Optional[CouponFeedSummary] = None
 
     model_config = {"from_attributes": True}
+
+
+class ReelCommentCreate(BaseModel):
+    text: str = Field(..., min_length=1, max_length=500)
+    parent_comment_id: Optional[uuid.UUID] = None
+
+
+class ReelCommentOut(BaseModel):
+    id: uuid.UUID
+    parent_comment_id: Optional[uuid.UUID] = None
+    user_name: str
+    user_initial: str
+    profile_image_url: Optional[str] = None
+    text: str
+    created_at: datetime
+    is_store_reply: bool = False
 
 
 class ReelManagementOut(BaseModel):

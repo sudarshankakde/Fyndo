@@ -30,6 +30,8 @@ async def build_user_out(user: User, db: AsyncSession) -> UserOut:
         id=user.id,
         phone=user.phone,
         full_name=user.full_name,
+        username=user.username,
+        profile_image_url=user.profile_image_url,
         email=user.email,
         role=user.role.value if hasattr(user.role, "value") else str(user.role),
         preferred_language=user.preferred_language,

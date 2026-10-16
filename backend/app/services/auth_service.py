@@ -306,6 +306,19 @@ class AuthService:
         """Updates user profile information."""
         if payload.full_name is not None:
             user.full_name = payload.full_name.strip()
+        if payload.username is not None:
+            username = payload.username.strip().lower()
+            existing = (await db.execute(
+                select(User).where(User.username == username, User.id != user.id)
+            )).scalars().first()
+            if existing:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="That username is already taken.",
+                )
+            user.username = username
+        if payload.profile_image_url is not None:
+            user.profile_image_url = payload.profile_image_url.strip() or None
         if payload.email is not None:
             user.email = payload.email.strip()
         if payload.preferred_language is not None:

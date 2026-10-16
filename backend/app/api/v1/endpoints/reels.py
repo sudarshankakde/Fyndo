@@ -5,15 +5,17 @@ from datetime import datetime, timezone
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from app.api.v1.endpoints.auth import get_current_user
 from app.core.database import get_db
+from app.core.privacy import mask_phone
 from app.core.security import decode_access_token
 from app.models.coupon import CouponTemplate, DiscountType
 from app.models.merchant import Merchant, Sector
 from app.models.reel import AudioType, Reel, ReelStatus, ReelView
+from app.models.reel_engagement import ReelComment, ReelLike
 from app.models.user import User
 from app.schemas.common import ResponseEnvelope
 from app.schemas.reel import (
@@ -23,6 +25,8 @@ from app.schemas.reel import (
     ReelManagementOut,
     ReelOut,
     ReelUpdateRequest,
+    ReelCommentCreate,
+    ReelCommentOut,
 )
 from app.utils.geo import calculate_haversine_distance
 
@@ -65,7 +69,8 @@ async def get_proximity_feed(
     sector: Optional[str] = Query(None),
     limit: int = Query(20, ge=1, le=50),
     cursor: Optional[str] = Query(None),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_optional_user),
 ):
 
     """
@@ -84,6 +89,37 @@ async def get_proximity_feed(
     reels = result.scalars().all()
 
     feed_items = []
+    reel_ids = [reel.id for reel in reels]
+    like_counts = dict(
+        (reel_id, count)
+        for reel_id, count in (
+            await db.execute(
+                select(ReelLike.reel_id, func.count(ReelLike.id))
+                .where(ReelLike.reel_id.in_(reel_ids))
+                .group_by(ReelLike.reel_id)
+            )
+        ).all()
+    ) if reel_ids else {}
+    liked_ids: set[uuid.UUID] = set()
+    if current_user and reel_ids:
+        liked_ids = set(
+            (await db.execute(
+                select(ReelLike.reel_id).where(
+                    ReelLike.user_id == current_user.id,
+                    ReelLike.reel_id.in_(reel_ids),
+                )
+            )).scalars().all()
+        )
+    comment_counts = dict(
+        (reel_id, count)
+        for reel_id, count in (
+            await db.execute(
+                select(ReelComment.reel_id, func.count(ReelComment.id))
+                .where(ReelComment.reel_id.in_(reel_ids))
+                .group_by(ReelComment.reel_id)
+            )
+        ).all()
+    ) if reel_ids else {}
     radius_meters = radius_km * 1000
 
     for reel in reels:
@@ -122,8 +158,10 @@ async def get_proximity_feed(
                 thumbnail_url=reel.thumbnail_url,
                 duration_seconds=reel.duration_seconds,
                 views_count=reel.views_count,
+                likes_count=int(like_counts.get(reel.id, 0)),
+                is_liked=reel.id in liked_ids,
                 allow_comments=getattr(reel, "allow_comments", True),
-                comments_count=18,
+                comments_count=int(comment_counts.get(reel.id, 0)),
                 merchant=MerchantFeedSummary(
                     id=merchant.id,
                     business_name=merchant.business_name,
@@ -407,3 +445,121 @@ async def record_reel_view(
     reel.views_count += 1
     await db.flush()
     return ResponseEnvelope(data={"reel_id": str(reel.id), "views_count": reel.views_count, "counted": True})
+
+
+@router.post("/reels/{reel_id}/like", response_model=ResponseEnvelope[dict])
+async def toggle_reel_like(
+    reel_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    reel = (await db.execute(
+        select(Reel).where(
+            Reel.id == reel_id,
+            Reel.status == ReelStatus.APPROVED,
+            Reel.deleted_at.is_(None),
+        )
+    )).scalars().first()
+    if not reel:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Reel not found.")
+
+    existing = (await db.execute(
+        select(ReelLike).where(ReelLike.reel_id == reel_id, ReelLike.user_id == current_user.id)
+    )).scalars().first()
+    if existing:
+        await db.delete(existing)
+        liked = False
+    else:
+        db.add(ReelLike(reel_id=reel_id, user_id=current_user.id))
+        liked = True
+    await db.flush()
+    likes_count = (await db.execute(
+        select(func.count(ReelLike.id)).where(ReelLike.reel_id == reel_id)
+    )).scalar_one()
+    return ResponseEnvelope(data={"liked": liked, "likes_count": int(likes_count)})
+
+
+@router.get("/reels/{reel_id}/comments", response_model=ResponseEnvelope[List[ReelCommentOut]])
+async def list_reel_comments(
+    reel_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    reel = (await db.execute(
+        select(Reel).where(Reel.id == reel_id, Reel.deleted_at.is_(None))
+    )).scalars().first()
+    if not reel:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Reel not found.")
+
+    rows = (await db.execute(
+        select(ReelComment, User)
+        .join(User, ReelComment.user_id == User.id)
+        .where(ReelComment.reel_id == reel_id)
+        .order_by(ReelComment.created_at.asc())
+    )).all()
+    return ResponseEnvelope(data=[
+        ReelCommentOut(
+            id=comment.id,
+            parent_comment_id=comment.parent_comment_id,
+            user_name=user.username or mask_phone(user.phone),
+            user_initial=(user.username or "F")[0].upper(),
+            profile_image_url=user.profile_image_url,
+            text=comment.text,
+            created_at=comment.created_at,
+            is_store_reply=str(user.role) in {"MERCHANT", "UserRole.MERCHANT"},
+        )
+        for comment, user in rows
+    ])
+
+
+@router.post("/reels/{reel_id}/comments", response_model=ResponseEnvelope[ReelCommentOut])
+async def create_reel_comment(
+    reel_id: uuid.UUID,
+    request: ReelCommentCreate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    reel = (await db.execute(
+        select(Reel).where(
+            Reel.id == reel_id,
+            Reel.status == ReelStatus.APPROVED,
+            Reel.deleted_at.is_(None),
+        )
+    )).scalars().first()
+    if not reel:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Reel not found.")
+    if not reel.allow_comments:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Comments are disabled for this reel.")
+    if not request.text.strip():
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Comment cannot be empty.")
+
+    parent_comment_id = request.parent_comment_id
+    if parent_comment_id:
+        parent = (await db.execute(
+            select(ReelComment).where(
+                ReelComment.id == parent_comment_id,
+                ReelComment.reel_id == reel_id,
+            )
+        )).scalars().first()
+        if not parent:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Comment to reply to was not found.")
+        parent_comment_id = parent.parent_comment_id or parent.id
+
+    comment = ReelComment(
+        reel_id=reel_id,
+        user_id=current_user.id,
+        parent_comment_id=parent_comment_id,
+        text=request.text.strip(),
+    )
+    db.add(comment)
+    await db.flush()
+    await db.refresh(comment)
+    return ResponseEnvelope(data=ReelCommentOut(
+        id=comment.id,
+        parent_comment_id=comment.parent_comment_id,
+        user_name=current_user.username or mask_phone(current_user.phone),
+        user_initial=(current_user.username or "F")[0].upper(),
+        profile_image_url=current_user.profile_image_url,
+        text=comment.text,
+        created_at=comment.created_at,
+        is_store_reply=str(current_user.role) in {"MERCHANT", "UserRole.MERCHANT"},
+    ))

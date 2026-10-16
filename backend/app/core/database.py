@@ -50,6 +50,13 @@ async def ensure_compatibility_schema() -> None:
                 "redemptions_ledger": {
                     "bill_amount": "NUMERIC(10, 2) NOT NULL DEFAULT 0",
                 },
+                "reel_comments": {
+                    "parent_comment_id": "UUID NULL",
+                },
+                "users": {
+                    "username": "VARCHAR(30) NULL",
+                    "profile_image_url": "VARCHAR(500) NULL",
+                },
             }
             for table, columns in tables_and_columns.items():
                 existing = await conn.run_sync(
@@ -73,6 +80,12 @@ async def ensure_compatibility_schema() -> None:
                 text(
                     "ALTER TABLE redemptions_ledger ADD COLUMN IF NOT EXISTS "
                     "bill_amount NUMERIC(10, 2) NOT NULL DEFAULT 0"
+                )
+            )
+            await conn.execute(
+                text(
+                    "ALTER TABLE reel_comments ADD COLUMN IF NOT EXISTS "
+                    "parent_comment_id UUID NULL"
                 )
             )
     _compatibility_schema_ready = True
