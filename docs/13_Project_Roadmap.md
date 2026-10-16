@@ -16,10 +16,11 @@
 | **Phase 2** | Reel Studio & Coupon Engine | Direct MP4 Upload, Video Delivery, Sector Coupon Builder | 🟢 Complete (Full Stack) |
 | **Phase 3** | Admin Moderation Pipeline | Video Review Desk, Audio Policy, KYC Verification | 🟢 Complete (Full Stack) |
 | **Phase 4** | Discovery Feed & Map Engine | PostGIS 2/5/10km Geo-feed, 9:16 Video Player, Wallet Claim | 🟢 Complete (Full Stack) |
-| **Phase 5** | Anti-Fraud In-Store Redemption | 60s Dynamic TOTP QR, Cashier Scanner POS, Scratch Cards | 🟢 Complete (Full Stack) |
 | **Phase 6** | Hardening, Anti-Cheating Loop & Full Stitch UI | Nagpur / Mumbai Pilot, Notifications Screen, Scratch Cards | 🟢 Complete (Full Stack) |
+| **Phase 7** | Operations Desk, Admin Data Hub & Mobile Runbook | Store Onboarding, PIN Management, Mobile Architecture Docs | 🟢 Complete (Full Stack) |
 
 ---
+
 
 ## 2. Detailed Vertical Slices
 
@@ -69,5 +70,11 @@
 - [x] Shopper Profile & Saved Passes (`ProfileScreen`, Stitch Screen 3) with real-time Fyndo Coins balance and privilege badges.
 - [x] Single-City pilot live endpoints running on port 5000 with seed data for Nagpur & Mumbai merchants.
 - [x] 100% TypeScript type safety (`tsc --noEmit` pass) and strict <300 line-of-code audit across all 75 mobile source files.
+
+### Phase 7: Operations Desk, Admin Data Hub & Mobile Runbook
+- [x] Backend Admin CRUD APIs: `AdminService` with platform overview stats (`/admin/stats`), merchant store creation & updates (`/admin/merchants`), cashier staff 6-digit PIN management (`/admin/merchants/:id/staff`), and direct reel/coupon publishing (`/admin/reels`).
+- [x] Frontend Operations Desk (`AdminPage.tsx`): 4-tab control center with `AdminStatsOverview.tsx`, `AdminModerationDesk.tsx`, `AdminMerchantsDesk.tsx`, and `AdminReelsDesk.tsx`.
+- [x] Comprehensive Mobile Documentation (`docs/15_Mobile_App_Architecture_And_Runbook.md` & `fyndo-mobile/README.md`): Architectural guide, Glacier Minimal design tokens, safe area formulas, network client configuration, and operator runbook.
+
 
 
