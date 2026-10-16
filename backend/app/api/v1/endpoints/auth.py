@@ -116,10 +116,12 @@ async def verify_otp(request: OtpVerifyRequest, db: AsyncSession = Depends(get_d
 
 
 @router.post("/auth/staff-login", response_model=ResponseEnvelope[StaffLoginResponse])
+@router.post("/auth/staff-pin", response_model=ResponseEnvelope[StaffLoginResponse])
 async def staff_login(request: StaffLoginRequest, db: AsyncSession = Depends(get_db)):
     """Cashier/Staff terminal login using merchant phone and 6-digit staff PIN."""
     data = await AuthService.staff_login(request, db)
     return ResponseEnvelope(data=data, message="Staff terminal authenticated")
+
 
 
 @router.post("/auth/admin-login", response_model=ResponseEnvelope[AuthTokenResponse])

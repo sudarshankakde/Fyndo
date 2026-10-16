@@ -50,7 +50,8 @@ class AuthTokenResponse(BaseModel):
 
 
 class StaffLoginRequest(BaseModel):
-    store_phone: str = Field(..., description="Store owner's registered +91 phone number")
+    store_phone: Optional[str] = Field(None, description="Store owner or staff registered phone number")
+    phone: Optional[str] = Field(None, description="Alias for store_phone")
     pin: str = Field(..., min_length=6, max_length=6, description="6-digit staff PIN")
 
 
@@ -62,6 +63,8 @@ class StaffLoginResponse(BaseModel):
     staff_name: str
     merchant_id: uuid.UUID
     business_name: str
+    user: Optional[UserOut] = None
+
 
 
 class AdminLoginRequest(BaseModel):

@@ -31,14 +31,16 @@ SECTOR_VALIDITY_LIMITS = {
 
 
 @router.get("/reels/feed", response_model=ResponseEnvelope[List[ReelOut]])
+@router.get("/reels", response_model=ResponseEnvelope[List[ReelOut]])
 async def get_proximity_feed(
-    lat: float = Query(..., ge=-90.0, le=90.0),
-    lon: float = Query(..., ge=-180.0, le=180.0),
-    radius_km: int = Query(5, ge=1, le=50),
+    lat: float = Query(21.1458, ge=-90.0, le=90.0),
+    lon: float = Query(79.0882, ge=-180.0, le=180.0),
+    radius_km: int = Query(10, ge=1, le=50),
     sector: Optional[str] = Query(None),
-    limit: int = Query(10, ge=1, le=50),
+    limit: int = Query(20, ge=1, le=50),
     db: AsyncSession = Depends(get_db)
 ):
+
     """
     Returns proximity-filtered 9:16 vertical reels within the given radius (2km, 5km, 10km).
     Sorted by distance ascending.

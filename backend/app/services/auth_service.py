@@ -82,26 +82,44 @@ class AuthService:
 
     @classmethod
     async def staff_login(cls, request: StaffLoginRequest, db: AsyncSession) -> StaffLoginResponse:
-        """Authenticates cashier staff via store phone and 6-digit PIN."""
-        user_res = await db.execute(select(User).where(User.phone == request.store_phone))
-        owner = user_res.scalars().first()
-        if not owner:
+        """Authenticates cashier staff via store owner phone or staff phone and 6-digit PIN."""
+        raw_phone = request.store_phone or request.phone
+        if not raw_phone:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Store account not found for this mobile number."
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Store phone or staff mobile number is required."
             )
 
-        merch_res = await db.execute(select(Merchant).where(Merchant.user_id == owner.id))
-        merchant = merch_res.scalars().first()
-        if not merchant:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Merchant profile not registered for this store."
-            )
+        lookup_phone = raw_phone.strip().replace(" ", "")
+        if not lookup_phone.startswith("+91"):
+            lookup_phone = f"+91{lookup_phone}"
 
-        staff_res = await db.execute(select(MerchantStaff).where(MerchantStaff.merchant_id == merchant.id))
+        # 1. Try finding staff directly by staff's phone
+        staff_res = await db.execute(select(MerchantStaff).where(MerchantStaff.phone == lookup_phone))
         staff = staff_res.scalars().first()
-        if not staff or not staff.is_active:
+
+        merchant = None
+        if staff:
+            merch_res = await db.execute(select(Merchant).where(Merchant.id == staff.merchant_id))
+            merchant = merch_res.scalars().first()
+        else:
+            # 2. Try finding merchant by owner's phone
+            user_res = await db.execute(select(User).where(User.phone == lookup_phone))
+            owner = user_res.scalars().first()
+            if owner:
+                merch_res = await db.execute(select(Merchant).where(Merchant.user_id == owner.id))
+                merchant = merch_res.scalars().first()
+                if merchant:
+                    staff_res = await db.execute(select(MerchantStaff).where(MerchantStaff.merchant_id == merchant.id))
+                    staff = staff_res.scalars().first()
+
+        if not merchant or not staff:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No registered store or counter staff found for this mobile number."
+            )
+
+        if not staff.is_active:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="No active counter staff assigned to this store."
@@ -121,14 +139,26 @@ class AuthService:
         ref_token = create_refresh_token(subject=str(staff.id), role="ROLE_CASHIER")
         await SessionService.store_refresh_session(ref_token, str(staff.id), "ROLE_CASHIER")
 
+        user_out = UserOut(
+            id=staff.id,
+            phone=staff.phone,
+            full_name=staff.staff_name,
+            role="ROLE_CASHIER",
+            preferred_language="en",
+            merchant_id=merchant.id,
+            business_name=merchant.business_name
+        )
+
         return StaffLoginResponse(
             access_token=token,
             refresh_token=ref_token,
             staff_id=staff.id,
             staff_name=staff.staff_name,
             merchant_id=merchant.id,
-            business_name=merchant.business_name
+            business_name=merchant.business_name,
+            user=user_out
         )
+
 
     @classmethod
     async def admin_login(cls, request: AdminLoginRequest, db: AsyncSession) -> AuthTokenResponse:
