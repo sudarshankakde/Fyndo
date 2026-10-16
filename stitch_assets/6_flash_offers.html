@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" name="viewport"/><link href="https://fonts.googleapis.com" rel="preconnect"/><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/><link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&amp;display=swap" rel="stylesheet"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><style>@layer base{html,body{width:100vw;margin:0;padding:0;background-color:#0a0e1a;}body{overscroll-behavior:none;}.pb-safe{padding-bottom:env(safe-area-inset-bottom,0px);}.pt-safe{padding-top:env(safe-area-inset-top,0px);}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config={darkMode:"class",theme:{extend:{"colors":{"secondary-fixed-dim":"#88b4cc","surface-tint":"#7dd3fc","primary-fixed":"#c8eaff","inverse-surface":"#e0e8f0","tertiary-fixed":"#e8d0ff","on-tertiary":"#1a002e","outline-variant":"#2a3a48","on-secondary-container":"#c0d8e8","surface-bright":"#1a2438","on-secondary-fixed":"#0d1f2b","error-container":"#3d1414","error":"#ff6b6b","surface-variant":"#1a2438","secondary":"#88b4cc","on-surface-variant":"#a0b4c4","inverse-primary":"#0a4c6e","background":"#0a0e1a","on-primary-container":"#c8eaff","primary-fixed-dim":"#7dd3fc","tertiary":"#c8a0f0","on-secondary-fixed-variant":"#2a4a5e","on-primary-fixed-variant":"#004d73","on-primary-fixed":"#001f2e","surface-dim":"#0f1524","surface-container-highest":"#202c42","on-background":"#e0e8f0","tertiary-container":"#3d2060","outline":"#4a6070","on-tertiary-container":"#e8d0ff","on-secondary":"#001f2e","secondary-container":"#1a3a4e","secondary-fixed":"#c0d8e8","on-error-container":"#ffb3b3","primary-container":"#0e4d6e","surface":"#0f1524","on-tertiary-fixed-variant":"#4d2a73","inverse-on-surface":"#0a0e1a","surface-container-high":"#1a2438","on-primary":"#001f2e","surface-container":"#141c2e","surface-container-low":"#111828","on-surface":"#e0e8f0","on-tertiary-fixed":"#1a002e","tertiary-fixed-dim":"#c8a0f0","on-error":"#1a0000","primary":"#7dd3fc","surface-container-lowest":"#0a0e1a"},"borderRadius":{"DEFAULT":"0.5rem","lg":"1rem","xl":"1.5rem","full":"9999px"},"spacing":{},"fontFamily":{"headline":["Inter"],"display":["Inter"],"body":["Inter"],"label":["Inter"]},"fontSize":{}}}}</script><style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head><body class="bg-background font-body text-on-surface min-h-screen flex flex-col antialiased selection:bg-primary/20 selection:text-primary"><header class="fixed top-0 w-full z-50 pt-safe bg-surface-container-lowest/60 backdrop-blur-2xl"><div class="h-16 px-4 flex items-center justify-between"><div class="flex items-center gap-2.5"><div class="flex items-center justify-center w-8 h-8 rounded-full bg-primary/10 text-primary"><span class="material-symbols-outlined text-[18px]">location_on</span></div><div class="flex flex-col"><span class="text-[10px] font-label font-medium uppercase tracking-wider text-on-surface-variant">Exploring</span><h1 class="text-sm font-headline font-semibold text-on-surface flex items-center gap-1 leading-tight">Flash Deals <span class="material-symbols-outlined text-xs text-on-surface-variant">expand_more</span></h1></div></div><div class="flex items-center gap-2"><button class="w-11 h-11 rounded-full flex items-center justify-center text-on-surface-variant hover:text-on-surface transition-colors"><span class="material-symbols-outlined text-[20px]">notifications</span></button><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></div></header><main class="flex-1 flex flex-col relative w-full pt-16 pb-28 bg-background"><div class="flex flex-col w-full px-4 pt-2 pb-6 space-y-6">
+<!-- Search & Category Filters -->
+<section class="flex flex-col space-y-3.5">
+<!-- Frosted Search Field -->
+<div class="relative w-full">
+<div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-on-surface-variant">
+<span class="material-symbols-outlined text-[19px]">search</span>
+</div>
+<input class="w-full pl-10 pr-11 py-3 text-xs tracking-wide rounded-xl bg-surface-container/60 backdrop-blur-md text-on-surface placeholder:text-on-surface-variant focus:outline-none focus:bg-surface-container-high/80 transition-all shadow-sm" placeholder="Search curated perks, speakeasies, bistros..." type="text"/>
+<button class="absolute inset-y-0 right-0 pr-3.5 flex items-center text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined text-[18px]">tune</span>
+</button>
+</div>
+<!-- Category Filter Horizontal Scroll -->
+<div class="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5" id="category-pills">
+<button class="shrink-0 px-4 py-2 rounded-full text-xs font-medium bg-primary text-on-primary shadow-sm transition-transform active:scale-95">All</button>
+<button class="shrink-0 px-4 py-2 rounded-full text-xs font-medium bg-surface-container/60 backdrop-blur-md text-on-surface-variant hover:text-on-surface transition-all active:scale-95">Dining</button>
+<button class="shrink-0 px-4 py-2 rounded-full text-xs font-medium bg-surface-container/60 backdrop-blur-md text-on-surface-variant hover:text-on-surface transition-all active:scale-95">Cafes</button>
+<button class="shrink-0 px-4 py-2 rounded-full text-xs font-medium bg-surface-container/60 backdrop-blur-md text-on-surface-variant hover:text-on-surface transition-all active:scale-95">Nightlife</button>
+<button class="shrink-0 px-4 py-2 rounded-full text-xs font-medium bg-surface-container/60 backdrop-blur-md text-on-surface-variant hover:text-on-surface transition-all active:scale-95">Wellness</button>
+<button class="shrink-0 px-4 py-2 rounded-full text-xs font-medium bg-surface-container/60 backdrop-blur-md text-on-surface-variant hover:text-on-surface transition-all active:scale-95">Pop-ups</button>
+</div>
+</section>
+<!-- Happening Now Hero Card -->
+<section class="flex flex-col space-y-2">
+<div class="flex items-center justify-between px-0.5">
+<div class="flex items-center gap-1.5">
+<span class="inline-block w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></span>
+<span class="text-[11px] font-label font-semibold tracking-wider uppercase text-primary">Happening Now</span>
+</div>
+<span class="text-[11px] font-label text-on-surface-variant">Live Member Privilege</span>
+</div>
+<div class="relative w-full rounded-2xl overflow-hidden bg-surface-container shadow-xl">
+<!-- High-res Photography -->
+<div class="bg-cover bg-center w-full h-80 relative flex flex-col justify-between p-4" data-alt="Editorial moody interior photo of an artisanal brick oven pizzeria and modern cocktail lounge, dark atmospheric lighting with faint ice-blue neon accents, cinematic reflections on polished mahogany wood and crystal stemware, captured with 35mm lens, minimalist luxury vibe" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuCsyZBAcM9JBz6a8Uo2eS8eaQMq6ww3d1On4dkJ0tthpdvto618wp_LWiY26HEyrlX-kACFLRFtQC_3I_3-KLGfybamkee9j6tldM0NEoOi8mir_1M4-D1cpA0CWeoYYgXxeBcBBikMobL_sY6ShV83I5A-vjj-vmxpedK9-EEIO3Ygvnx4aMtfH4VrY5wmJDnDIqQXEwzYCSRHs0WFTbMIdzn0tEQglb4BWfhLmvynLo1jTgdGc0OY')">
+<!-- Top Badges Glass Overlay -->
+<div class="flex items-center justify-between z-10">
+<div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-surface-dim/75 backdrop-blur-xl shadow-md">
+<span class="material-symbols-outlined text-[13px] text-primary">bolt</span>
+<span class="text-[11px] font-medium tracking-tight text-primary">Expiring in 2h 45m</span>
+</div>
+<button class="w-8 h-8 rounded-full bg-surface-dim/75 backdrop-blur-xl flex items-center justify-center text-on-surface hover:text-primary transition-transform active:scale-90 shadow-md">
+<span class="material-symbols-outlined text-[17px]">bookmark</span>
+</button>
+</div>
+<!-- Scrim Gradient -->
+<div class="absolute inset-0 bg-gradient-to-t from-surface-dim via-surface-dim/40 to-transparent"></div>
+<!-- Hero Content Bottom -->
+<div class="relative z-10 flex flex-col space-y-3">
+<div>
+<div class="flex items-center gap-2 mb-1">
+<span class="text-[10px] uppercase font-semibold tracking-widest text-primary px-2 py-0.5 rounded-md bg-primary-container/60 backdrop-blur-sm">Exclusive Perk</span>
+<span class="text-[11px] text-on-surface-variant flex items-center gap-0.5">
+<span class="material-symbols-outlined text-[13px]">location_on</span>
+                Indiranagar • 1.2 km
+              </span>
+</div>
+<h2 class="text-xl font-headline font-semibold text-on-surface tracking-tight">Brik Oven</h2>
+<p class="text-xs text-on-surface-variant font-light mt-0.5">20% Off Bill &amp; Complimentary Burrata Crudo</p>
+</div>
+<div class="flex items-center justify-between pt-1">
+<div class="flex flex-col">
+<span class="text-[10px] uppercase tracking-wider text-on-surface-variant">Access Pass</span>
+<span class="text-sm font-semibold text-primary">Tier 1 Members</span>
+</div>
+<button class="px-5 py-2.5 rounded-xl bg-primary/20 backdrop-blur-xl hover:bg-primary/30 text-primary text-xs font-medium tracking-wide flex items-center gap-1.5 transition-all shadow-sm active:scale-95">
+<span>Claim Pass</span>
+<span class="material-symbols-outlined text-[15px]">arrow_forward</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- Filter Toggle Pills -->
+<section class="flex items-center justify-between pt-1">
+<div class="inline-flex p-1 rounded-xl bg-surface-container/70 backdrop-blur-md shadow-inner gap-1" id="sorting-toggles">
+<button class="px-3.5 py-1.5 rounded-lg text-[11px] font-medium bg-surface-container-high text-primary shadow-sm transition-all">Near Me</button>
+<button class="px-3.5 py-1.5 rounded-lg text-[11px] font-medium text-on-surface-variant hover:text-on-surface transition-all">Popular</button>
+<button class="px-3.5 py-1.5 rounded-lg text-[11px] font-medium text-on-surface-variant hover:text-on-surface transition-all">Expiring Soon</button>
+</div>
+<span class="text-[11px] text-on-surface-variant font-label">14 Available</span>
+</section>
+<!-- Curated Grid of Exclusive Offers -->
+<section class="flex flex-col space-y-4">
+<!-- Deal Card 1 -->
+<div class="group relative flex flex-col rounded-2xl overflow-hidden bg-surface-container shadow-md hover:bg-surface-container-high/60 transition-all">
+<div class="relative w-full h-44 overflow-hidden">
+<div class="bg-cover bg-center w-full h-full transform group-hover:scale-105 transition-transform duration-500" data-alt="Minimalist cocktail bar interior with low amber and deep blue lighting, craft mixology glasses arranged on dark slate counter with smoke infusion, contemporary architectural lounge aesthetic, dark moody tones" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuB01DAk7SpqQZN1VOGMobgE1iy_GwfAbGCEnecERgu31yNWg0nJcty4Bp4alH44NtYJT3pgWXffIipdDl0bW_zqBTpj1VlRWxltnzNlUAkcJb4sCzAaJ1RvEvUvB4rzainkU-nAn2vT5G6l-RQjALbQLTy_BykU3crkiEjlInUz2aEARAfkWqx2wFlzhs7btGUuidP4px4snYbeYBoRUEPV08QIAXS4bQeqP94P64AL74YBe0Palhga')"></div>
+<div class="absolute inset-0 bg-gradient-to-t from-surface-container via-transparent to-transparent"></div>
+<div class="absolute top-3 left-3 px-2.5 py-1 rounded-full bg-surface-dim/80 backdrop-blur-md text-[10px] font-medium text-primary flex items-center gap-1">
+<span class="material-symbols-outlined text-[12px]">local_bar</span>
+          Cocktail Hour
+        </div>
+<div class="absolute top-3 right-3 px-2.5 py-1 rounded-full bg-primary-container/80 backdrop-blur-md text-[10px] font-semibold text-primary">
+          1+1 Artisanal Cocktails
+        </div>
+</div>
+<div class="p-4 flex flex-col space-y-2">
+<div class="flex items-start justify-between">
+<div>
+<h3 class="text-base font-headline font-semibold text-on-surface">The Glass Onion Speakeasy</h3>
+<p class="text-xs text-on-surface-variant flex items-center gap-1 mt-0.5">
+<span>Lavelle Road</span>
+<span>•</span>
+<span>0.8 km</span>
+<span>•</span>
+<span class="text-tertiary">Rare Spirits</span>
+</p>
+</div>
+<button class="px-3 py-1.5 rounded-lg bg-surface-container-highest/60 hover:bg-primary hover:text-on-primary text-on-surface text-xs font-medium transition-colors">
+            Unlock
+          </button>
+</div>
+</div>
+</div>
+<!-- Deal Card 2 -->
+<div class="group relative flex flex-col rounded-2xl overflow-hidden bg-surface-container shadow-md hover:bg-surface-container-high/60 transition-all">
+<div class="relative w-full h-44 overflow-hidden">
+<div class="bg-cover bg-center w-full h-full transform group-hover:scale-105 transition-transform duration-500" data-alt="Sunlit minimalist third-wave specialty cafe interior with poured concrete counters, lush monstera plants, frosted glass partitions, precision pour-over kettle and elegant artisan pastries on neutral ceramic plates" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuCDPkwS62ex6schsbTc5CHZ3g0Akb34KK0CnFAPciNlzOb24uOFO5O9NzqebxvxAM9JfnUntrEqcU7INICVtSMQlNeTQXMgqM-kuqAoFPCS2NcxNYksTBuZ848--9fWBAE8Wt1fH3XYnDWgWSCK6t1sXdGcvWgu8gyBH4EGNEHcIAsk1qGDLTxlrgeBCZFh2zxOkta4e4GXOoyGVhuJozuRn0dx9oHpAciKLDnBxrb9hXWdXidyQR8w')"></div>
+<div class="absolute inset-0 bg-gradient-to-t from-surface-container via-transparent to-transparent"></div>
+<div class="absolute top-3 left-3 px-2.5 py-1 rounded-full bg-surface-dim/80 backdrop-blur-md text-[10px] font-medium text-primary flex items-center gap-1">
+<span class="material-symbols-outlined text-[12px]">coffee</span>
+          Roastery
+        </div>
+<div class="absolute top-3 right-3 px-2.5 py-1 rounded-full bg-primary-container/80 backdrop-blur-md text-[10px] font-semibold text-primary">
+          Flat 25% Off
+        </div>
+</div>
+<div class="p-4 flex flex-col space-y-2">
+<div class="flex items-start justify-between">
+<div>
+<h3 class="text-base font-headline font-semibold text-on-surface">Subko Specialty Coffee</h3>
+<p class="text-xs text-on-surface-variant flex items-center gap-1 mt-0.5">
+<span>Koramangala 4th Block</span>
+<span>•</span>
+<span>2.1 km</span>
+<span>•</span>
+<span class="text-secondary">Micro-Lot Brews</span>
+</p>
+</div>
+<button class="px-3 py-1.5 rounded-lg bg-surface-container-highest/60 hover:bg-primary hover:text-on-primary text-on-surface text-xs font-medium transition-colors">
+            Unlock
+          </button>
+</div>
+</div>
+</div>
+<!-- Deal Card 3 -->
+<div class="group relative flex flex-col rounded-2xl overflow-hidden bg-surface-container shadow-md hover:bg-surface-container-high/60 transition-all">
+<div class="relative w-full h-44 overflow-hidden">
+<div class="bg-cover bg-center w-full h-full transform group-hover:scale-105 transition-transform duration-500" data-alt="Serene luxury thermal spa hydrotherapy bath enclosed in dark slate walls with soft recessed ice-blue perimeter illumination, gentle rising vapor, quiet minimalist wellness sanctuary in high-end resort" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuAn3ryYXIF1-fLqpNEPj4B_RGkJS0SNS2S4MfwZhRVu-bOKTUbuhvnIIkicE4aEz2JbHuJ8PmHjsYTFnqkiREFzCys8l7AEZO97tlAM_7ngLWcoaHeRb6n0MGfJhsvAb4WnOwZYEI3knTHILz0PLnngQy6pgxBqEI2QgNmR7y_dLbMo4LG7LKEk_EpBATK2-l4RSmbxXIYJM2C6xc5lyZyOtEQ_XyLx9vQUfmlnQo0OFTHrpVydrvRP')"></div>
+<div class="absolute inset-0 bg-gradient-to-t from-surface-container via-transparent to-transparent"></div>
+<div class="absolute top-3 left-3 px-2.5 py-1 rounded-full bg-surface-dim/80 backdrop-blur-md text-[10px] font-medium text-tertiary flex items-center gap-1">
+<span class="material-symbols-outlined text-[12px]">spa</span>
+          Revitalize
+        </div>
+<div class="absolute top-3 right-3 px-2.5 py-1 rounded-full bg-tertiary-container/80 backdrop-blur-md text-[10px] font-semibold text-tertiary">
+          Complimentary Bath Ritual
+        </div>
+</div>
+<div class="p-4 flex flex-col space-y-2">
+<div class="flex items-start justify-between">
+<div>
+<h3 class="text-base font-headline font-semibold text-on-surface">Aura Hydrothermal Spa</h3>
+<p class="text-xs text-on-surface-variant flex items-center gap-1 mt-0.5">
+<span>UB City</span>
+<span>•</span>
+<span>1.5 km</span>
+<span>•</span>
+<span class="text-tertiary">Wellness Pass</span>
+</p>
+</div>
+<button class="px-3 py-1.5 rounded-lg bg-surface-container-highest/60 hover:bg-primary hover:text-on-primary text-on-surface text-xs font-medium transition-colors">
+            Unlock
+          </button>
+</div>
+</div>
+</div>
+</section>
+<!-- Interactive script for category and sort micro-interactions -->
+<script>
+    (() => {
+      const categoryPills = document.querySelectorAll('#category-pills button');
+      categoryPills.forEach(pill => {
+        pill.addEventListener('click', () => {
+          categoryPills.forEach(p => {
+            p.className = 'shrink-0 px-4 py-2 rounded-full text-xs font-medium bg-surface-container/60 backdrop-blur-md text-on-surface-variant hover:text-on-surface transition-all active:scale-95';
+          });
+          pill.className = 'shrink-0 px-4 py-2 rounded-full text-xs font-medium bg-primary text-on-primary shadow-sm transition-transform active:scale-95';
+        });
+      });
+
+      const sortToggles = document.querySelectorAll('#sorting-toggles button');
+      sortToggles.forEach(toggle => {
+        toggle.addEventListener('click', () => {
+          sortToggles.forEach(t => {
+            t.className = 'px-3.5 py-1.5 rounded-lg text-[11px] font-medium text-on-surface-variant hover:text-on-surface transition-all';
+          });
+          toggle.className = 'px-3.5 py-1.5 rounded-lg text-[11px] font-medium bg-surface-container-high text-primary shadow-sm transition-all';
+        });
+      });
+    })();
+  </script>
+</div></main><nav class="fixed bottom-0 w-full z-50 pb-safe pointer-events-none flex justify-center px-4" data-active-classes="text-primary scale-105"><div class="pointer-events-auto mb-4 px-3 py-2 rounded-full bg-[#121826]/75 backdrop-blur-[20px] shadow-[0_0_30px_rgba(125,211,252,0.06)] flex items-center justify-between gap-1 w-full max-w-sm"><a class="flex flex-col items-center justify-center min-w-[56px] h-11 text-on-surface-variant hover:text-on-surface transition-all duration-200" data-path="feed" href="#"><span class="material-symbols-outlined text-[22px]">home</span><span class="text-[10px] font-medium tracking-tight mt-0.5">Feed</span></a><a class="flex flex-col items-center justify-center min-w-[56px] h-11 text-on-surface-variant hover:text-on-surface transition-all duration-200" data-path="explore-map" href="#"><span class="material-symbols-outlined text-[22px]">radar</span><span class="text-[10px] font-medium tracking-tight mt-0.5">Discover</span></a><a class="flex flex-col items-center justify-center min-w-[56px] h-11 text-on-surface-variant hover:text-on-surface transition-all duration-200" data-path="reels-stream" href="#"><span class="material-symbols-outlined text-[22px]">play_circle</span><span class="text-[10px] font-medium tracking-tight mt-0.5">Reels</span></a><a aria-current="page" class="flex flex-col items-center justify-center min-w-[56px] h-11 transition-all duration-200 text-primary scale-105" data-path="flash-deals" href="#"><span class="material-symbols-outlined text-[22px]">local_offer</span><span class="text-[10px] font-medium tracking-tight mt-0.5">Deals</span></a><a class="flex flex-col items-center justify-center min-w-[56px] h-11 text-on-surface-variant hover:text-on-surface transition-all duration-200" data-path="saved-account" href="#"><span class="material-symbols-outlined text-[22px]">bookmark</span><span class="text-[10px] font-medium tracking-tight mt-0.5">Saved</span></a></div></nav></body></html>

@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" name="viewport"/><link href="https://fonts.googleapis.com" rel="preconnect"/><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/><link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&amp;display=swap" rel="stylesheet"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><style>@layer base{html,body{width:100vw;margin:0;padding:0;background-color:#0a0e1a;}body{overscroll-behavior:none;}.pb-safe{padding-bottom:env(safe-area-inset-bottom,0px);}.pt-safe{padding-top:env(safe-area-inset-top,0px);}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config={darkMode:"class",theme:{extend:{"colors":{"secondary-fixed-dim":"#88b4cc","surface-tint":"#7dd3fc","primary-fixed":"#c8eaff","inverse-surface":"#e0e8f0","tertiary-fixed":"#e8d0ff","on-tertiary":"#1a002e","outline-variant":"#2a3a48","on-secondary-container":"#c0d8e8","surface-bright":"#1a2438","on-secondary-fixed":"#0d1f2b","error-container":"#3d1414","error":"#ff6b6b","surface-variant":"#1a2438","secondary":"#88b4cc","on-surface-variant":"#a0b4c4","inverse-primary":"#0a4c6e","background":"#0a0e1a","on-primary-container":"#c8eaff","primary-fixed-dim":"#7dd3fc","tertiary":"#c8a0f0","on-secondary-fixed-variant":"#2a4a5e","on-primary-fixed-variant":"#004d73","on-primary-fixed":"#001f2e","surface-dim":"#0f1524","surface-container-highest":"#202c42","on-background":"#e0e8f0","tertiary-container":"#3d2060","outline":"#4a6070","on-tertiary-container":"#e8d0ff","on-secondary":"#001f2e","secondary-container":"#1a3a4e","secondary-fixed":"#c0d8e8","on-error-container":"#ffb3b3","primary-container":"#0e4d6e","surface":"#0f1524","on-tertiary-fixed-variant":"#4d2a73","inverse-on-surface":"#0a0e1a","surface-container-high":"#1a2438","on-primary":"#001f2e","surface-container":"#141c2e","surface-container-low":"#111828","on-surface":"#e0e8f0","on-tertiary-fixed":"#1a002e","tertiary-fixed-dim":"#c8a0f0","on-error":"#1a0000","primary":"#7dd3fc","surface-container-lowest":"#0a0e1a"},"borderRadius":{"DEFAULT":"0.5rem","lg":"1rem","xl":"1.5rem","full":"9999px"},"spacing":{},"fontFamily":{"headline":["Inter"],"display":["Inter"],"body":["Inter"],"label":["Inter"]},"fontSize":{}}}}</script><style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head><body class="bg-background font-body text-on-surface min-h-screen flex flex-col antialiased selection:bg-primary/20 selection:text-primary"><header class="fixed top-0 w-full z-50 pt-safe bg-surface-container-lowest/60 backdrop-blur-2xl"><div class="h-16 px-4 flex items-center justify-between"><div class="flex items-center gap-2.5"><div class="flex items-center justify-center w-8 h-8 rounded-full bg-primary/10 text-primary"><span class="material-symbols-outlined text-[18px]">location_on</span></div><div class="flex flex-col"><span class="text-[10px] font-label font-medium uppercase tracking-wider text-on-surface-variant">Exploring</span><h1 class="text-sm font-headline font-semibold text-on-surface flex items-center gap-1 leading-tight">Reels Stream <span class="material-symbols-outlined text-xs text-on-surface-variant">expand_more</span></h1></div></div><div class="flex items-center gap-2"><button class="w-11 h-11 rounded-full flex items-center justify-center text-on-surface-variant hover:text-on-surface transition-colors"><span class="material-symbols-outlined text-[20px]">notifications</span></button><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></div></header><main class="flex-1 flex flex-col relative w-full pt-16 pb-28 bg-background"><div class="flex flex-col w-full relative select-none">
+<!-- Dynamic Fullscreen Reel Card Container -->
+<div class="relative w-full aspect-[9/16] max-h-[820px] rounded-3xl overflow-hidden shadow-2xl bg-surface-container-lowest" id="reel-viewport">
+<!-- Immersive Cinematic Video Background -->
+<div class="absolute inset-0 bg-cover bg-center transition-transform duration-700 scale-105" data-alt="Cinematic atmospheric shot inside an artisanal wood-fired pizzeria in Indiranagar at twilight. A master pizzaiolo stretches rustic 48-hour fermented sourdough with airborne flour illuminated by warm glowing oven embers. Dramatic cool ice-blue neon ambient backlights mix with the golden firelight, creating rich moody contrast, deep shadows, and an ultra-chic culinary vibe." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuAdqpIfDVR1F8xgjc-qipSKZmJvS1FkEfNlt42r8TGpTLhoo9Py0zAodZ5RwTaDkfglVbtskJ175iebarrdeC7KaV-Hngyaw2w2tIJGTXwGeUzY3evltSDHJIIqBQXXTOt1Bqrsp7dG15rg19KFpDslwIkDMmjLzXuJxaqIFr9Ug4M7uZV02GzZCI9gpn_QpLsWB3hUbO8KOnsbOBephpTCSbO00zbYpN_ZmTaz8_8NcTd441vX94a9')"></div>
+<!-- Soft Depth Scrims for Glacier Glassmorphism -->
+<div class="absolute inset-0 bg-gradient-to-b from-surface-container-lowest/80 via-transparent to-surface-container-lowest/90 pointer-events-none"></div>
+<div class="absolute inset-0 bg-gradient-to-t from-background via-background/40 to-transparent pointer-events-none"></div>
+<!-- Top Navigation Filter Bar -->
+<div class="absolute top-4 inset-x-0 z-20 flex justify-center items-center px-4">
+<div class="flex items-center p-1 rounded-full bg-surface-dim/60 backdrop-blur-xl shadow-lg">
+<button class="px-4 py-1.5 rounded-full text-xs font-label font-semibold tracking-wide transition-all duration-300 text-on-surface bg-surface-container-high/80 shadow-sm" id="btn-for-you">
+          For You
+        </button>
+<button class="px-4 py-1.5 rounded-full text-xs font-label font-medium tracking-wide transition-all duration-300 text-on-surface-variant hover:text-on-surface" id="btn-nearby">
+          Nearby Indiranagar
+        </button>
+</div>
+</div>
+<!-- Right-Side Floating Micro-Interactions Stack -->
+<div class="absolute right-3.5 bottom-28 z-30 flex flex-col items-center gap-4">
+<!-- Like Action -->
+<div class="flex flex-col items-center group">
+<button class="w-12 h-12 rounded-full bg-surface-dim/60 backdrop-blur-xl flex items-center justify-center text-on-surface hover:text-primary transition-all duration-200 active:scale-90 shadow-md" id="like-trigger">
+<span class="material-symbols-outlined text-[26px] transition-transform duration-200" id="like-icon">favorite</span>
+</button>
+<span class="text-[11px] font-label font-medium text-on-surface/90 mt-1 tracking-tight" id="like-count">4.2k</span>
+</div>
+<!-- Bookmark Action -->
+<div class="flex flex-col items-center group">
+<button class="w-12 h-12 rounded-full bg-surface-dim/60 backdrop-blur-xl flex items-center justify-center text-on-surface hover:text-primary transition-all duration-200 active:scale-90 shadow-md" id="save-trigger">
+<span class="material-symbols-outlined text-[26px] transition-transform duration-200" id="save-icon">bookmark</span>
+</button>
+<span class="text-[11px] font-label font-medium text-on-surface/90 mt-1 tracking-tight" id="save-count">1.8k</span>
+</div>
+<!-- Share Action -->
+<div class="flex flex-col items-center group">
+<button class="w-12 h-12 rounded-full bg-surface-dim/60 backdrop-blur-xl flex items-center justify-center text-on-surface hover:text-primary transition-all duration-200 active:scale-90 shadow-md" id="share-trigger">
+<span class="material-symbols-outlined text-[24px]">share</span>
+</button>
+<span class="text-[11px] font-label font-medium text-on-surface/90 mt-1 tracking-tight">Share</span>
+</div>
+<!-- Spinning Disc Audio Track -->
+<div class="relative mt-2 flex items-center justify-center">
+<div class="w-11 h-11 rounded-full bg-surface-dim/80 backdrop-blur-xl flex items-center justify-center shadow-lg animate-spin" id="audio-disc" style="animation-duration: 8s; animation-timing-function: linear;">
+<img class="w-7 h-7 rounded-full object-cover" data-alt="Macro album vinyl cover art representing Brik Oven jazz soundtrack with soothing icy blue atmospheric tones and glowing brass saxophone neon vibes" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDV1-MRhscmeFro0LHazG_-aPr2VbTfRFOEmJO5SlOXaO1Iy4zK9B-rKbgK7eZ7XLmvmQ5HednMltw9uz9zGJZtmbNTIAjeTisOt5ptrNYvfnOjbFt4ngiP1ylFaGDM35lPZD8A06hxN7JgLrTbiCc1h-ItINiY2HC0SubX9ylpN1_QNM0nFPDCb--Y0YfPu_EiSGG3S8JcpLQ1mX6PxX6fPICIhx1ITzE1oqmEy3g5zUdQ9g2a-Qtg"/>
+</div>
+<span class="absolute -top-1 -right-1 flex h-3 w-3">
+<span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
+<span class="relative inline-flex rounded-full h-3 w-3 bg-primary"></span>
+</span>
+</div>
+</div>
+<!-- Merchant Details, Caption & Audio Tag -->
+<div class="absolute bottom-20 inset-x-0 z-20 px-4 flex flex-col gap-2.5 max-w-[82%]">
+<!-- Merchant Avatar & Tag -->
+<div class="flex items-center gap-2.5">
+<div class="relative">
+<img class="w-9 h-9 rounded-full object-cover shadow-sm ring-2 ring-primary/40" data-alt="Close up brand avatar photo of Brik Oven chef baker holding freshly baked crusty bread in an artisanal stone oven setting with deep atmospheric lighting" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCTYoF9qWOd3Yv5Ttbqz35gJOXioEoyRSs93v106PcLXlmNFz8y6xJ9UNIGKdK8yHFJpSeV4-eo_7vlTmcokIskNojkcwKbDpFuTCKSbE6a4SwC5WG0A8fNXz3_lDIFmBpRUEuRsVta911kpbJgU3DbWmanHgbfuCgk_o42WUc7tbkioEYBzkUsPCN64VqIaGbawkhloFmMTFkDaQPnfzlbHY75iS7dIf4BOS-otNLiET0qf6OR1dXi"/>
+<div class="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-primary flex items-center justify-center shadow">
+<span class="material-symbols-outlined text-[10px] text-on-primary font-bold">check</span>
+</div>
+</div>
+<div class="flex flex-col">
+<div class="flex items-center gap-1">
+<span class="text-sm font-headline font-semibold text-on-surface tracking-tight">@brikoven.blr</span>
+<span class="px-1.5 py-0.2 rounded-full bg-primary/20 text-primary text-[9px] font-label font-medium">Verified</span>
+</div>
+<span class="text-[11px] font-label text-on-surface-variant flex items-center gap-1">
+            Indiranagar, 100ft Rd • <span class="text-primary font-medium">Open Now</span>
+</span>
+</div>
+</div>
+<!-- Caption -->
+<p class="text-xs font-body text-on-surface/95 leading-snug line-clamp-2">
+        Hand-stretching 48hr sourdough pizzas live in Indiranagar 🍕✨ Crispy charred crusts, fresh stracciatella, and midnight jazz sessions.
+      </p>
+<!-- Music Tag -->
+<div class="flex items-center gap-1.5 text-primary-fixed-dim/90 overflow-hidden">
+<span class="material-symbols-outlined text-xs">graphic_eq</span>
+<span class="text-[11px] font-label tracking-tight truncate">Original Sound — Brik Oven Jazz Night (Live)</span>
+</div>
+</div>
+<!-- Interactive Voucher Floating Pill CTA -->
+<div class="absolute bottom-4 inset-x-0 z-30 px-4">
+<button class="w-full py-3 px-4 rounded-2xl bg-surface-dim/70 backdrop-blur-2xl text-on-surface shadow-xl flex items-center justify-between transition-all duration-300 active:scale-[0.98] hover:bg-surface-dim/85 group" id="cta-voucher">
+<div class="flex items-center gap-2.5">
+<div class="w-7 h-7 rounded-full bg-primary/20 flex items-center justify-center text-primary transition-transform group-hover:scale-110 duration-200">
+<span class="material-symbols-outlined text-[17px]">local_offer</span>
+</div>
+<div class="flex flex-col text-left">
+<span class="text-xs font-label font-semibold text-on-surface tracking-wide flex items-center gap-1.5">
+              Claim 20% Off Bill
+              <span class="w-1.5 h-1.5 rounded-full bg-primary"></span>
+<span class="text-[11px] font-normal text-on-surface-variant">400m away</span>
+</span>
+<span class="text-[10px] font-label text-on-surface-variant/80">Valid for dine-in today till 11:30 PM</span>
+</div>
+</div>
+<div class="w-8 h-8 rounded-full bg-primary text-on-primary flex items-center justify-center transition-transform duration-200 group-hover:translate-x-0.5 shadow-sm">
+<span class="material-symbols-outlined text-[18px]">arrow_forward</span>
+</div>
+</button>
+</div>
+<!-- Floating Toast Notification on Action -->
+<div class="absolute top-16 left-1/2 -translate-x-1/2 z-40 px-3.5 py-1.5 rounded-full bg-surface-bright/90 backdrop-blur-md text-on-surface text-xs font-label font-medium opacity-0 pointer-events-none transition-all duration-300 shadow-xl flex items-center gap-1.5" id="toast-pill">
+<span class="material-symbols-outlined text-primary text-sm">verified</span>
+<span id="toast-text">Voucher Saved to Wallet</span>
+</div>
+</div>
+</div>
+<script>
+  (() => {
+    // Like button toggle micro-interaction
+    const likeTrigger = document.getElementById('like-trigger');
+    const likeIcon = document.getElementById('like-icon');
+    const likeCount = document.getElementById('like-count');
+    let isLiked = false;
+
+    likeTrigger.addEventListener('click', () => {
+      isLiked = !isLiked;
+      if (isLiked) {
+        likeIcon.style.fontVariationSettings = "'FILL' 1";
+        likeTrigger.classList.add('text-error');
+        likeIcon.classList.add('scale-125');
+        setTimeout(() => likeIcon.classList.remove('scale-125'), 200);
+        likeCount.textContent = '4.3k';
+      } else {
+        likeIcon.style.fontVariationSettings = "'FILL' 0";
+        likeTrigger.classList.remove('text-error');
+        likeCount.textContent = '4.2k';
+      }
+    });
+
+    // Bookmark button toggle
+    const saveTrigger = document.getElementById('save-trigger');
+    const saveIcon = document.getElementById('save-icon');
+    const saveCount = document.getElementById('save-count');
+    let isSaved = false;
+
+    saveTrigger.addEventListener('click', () => {
+      isSaved = !isSaved;
+      if (isSaved) {
+        saveIcon.style.fontVariationSettings = "'FILL' 1";
+        saveTrigger.classList.add('text-primary');
+        saveIcon.classList.add('scale-125');
+        setTimeout(() => saveIcon.classList.remove('scale-125'), 200);
+        saveCount.textContent = '1.9k';
+        showToast('Saved to your collection');
+      } else {
+        saveIcon.style.fontVariationSettings = "'FILL' 0";
+        saveTrigger.classList.remove('text-primary');
+        saveCount.textContent = '1.8k';
+      }
+    });
+
+    // CTA Claim interaction
+    const ctaVoucher = document.getElementById('cta-voucher');
+    ctaVoucher.addEventListener('click', () => {
+      showToast('20% Voucher unlocked! Code: BRIK20');
+    });
+
+    // Toast messenger helper
+    const toast = document.getElementById('toast-pill');
+    const toastText = document.getElementById('toast-text');
+    let toastTimeout;
+
+    function showToast(msg) {
+      clearTimeout(toastTimeout);
+      toastText.textContent = msg;
+      toast.classList.remove('opacity-0', '-translate-y-2');
+      toast.classList.add('opacity-100', 'translate-y-0');
+      toastTimeout = setTimeout(() => {
+        toast.classList.add('opacity-0', '-translate-y-2');
+        toast.classList.remove('opacity-100', 'translate-y-0');
+      }, 2500);
+    }
+
+    // Tab toggle interaction
+    const btnForYou = document.getElementById('btn-for-you');
+    const btnNearby = document.getElementById('btn-nearby');
+
+    btnForYou.addEventListener('click', () => {
+      btnForYou.className = 'px-4 py-1.5 rounded-full text-xs font-label font-semibold tracking-wide transition-all duration-300 text-on-surface bg-surface-container-high/80 shadow-sm';
+      btnNearby.className = 'px-4 py-1.5 rounded-full text-xs font-label font-medium tracking-wide transition-all duration-300 text-on-surface-variant hover:text-on-surface';
+    });
+
+    btnNearby.addEventListener('click', () => {
+      btnNearby.className = 'px-4 py-1.5 rounded-full text-xs font-label font-semibold tracking-wide transition-all duration-300 text-on-surface bg-surface-container-high/80 shadow-sm';
+      btnForYou.className = 'px-4 py-1.5 rounded-full text-xs font-label font-medium tracking-wide transition-all duration-300 text-on-surface-variant hover:text-on-surface';
+    });
+  })();
+</script></main><nav class="fixed bottom-0 w-full z-50 pb-safe pointer-events-none flex justify-center px-4" data-active-classes="text-primary scale-105"><div class="pointer-events-auto mb-4 px-3 py-2 rounded-full bg-[#121826]/75 backdrop-blur-[20px] shadow-[0_0_30px_rgba(125,211,252,0.06)] flex items-center justify-between gap-1 w-full max-w-sm"><a class="flex flex-col items-center justify-center min-w-[56px] h-11 text-on-surface-variant hover:text-on-surface transition-all duration-200" data-path="feed" href="#"><span class="material-symbols-outlined text-[22px]">home</span><span class="text-[10px] font-medium tracking-tight mt-0.5">Feed</span></a><a class="flex flex-col items-center justify-center min-w-[56px] h-11 text-on-surface-variant hover:text-on-surface transition-all duration-200" data-path="explore-map" href="#"><span class="material-symbols-outlined text-[22px]">radar</span><span class="text-[10px] font-medium tracking-tight mt-0.5">Discover</span></a><a aria-current="page" class="flex flex-col items-center justify-center min-w-[56px] h-11 transition-all duration-200 text-primary scale-105" data-path="reels-stream" href="#"><span class="material-symbols-outlined text-[22px]">play_circle</span><span class="text-[10px] font-medium tracking-tight mt-0.5">Reels</span></a><a class="flex flex-col items-center justify-center min-w-[56px] h-11 text-on-surface-variant hover:text-on-surface transition-all duration-200" data-path="flash-deals" href="#"><span class="material-symbols-outlined text-[22px]">local_offer</span><span class="text-[10px] font-medium tracking-tight mt-0.5">Deals</span></a><a class="flex flex-col items-center justify-center min-w-[56px] h-11 text-on-surface-variant hover:text-on-surface transition-all duration-200" data-path="saved-account" href="#"><span class="material-symbols-outlined text-[22px]">bookmark</span><span class="text-[10px] font-medium tracking-tight mt-0.5">Saved</span></a></div></nav></body></html>
