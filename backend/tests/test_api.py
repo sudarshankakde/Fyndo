@@ -91,6 +91,12 @@ async def test_media_sign_upload(async_client: AsyncClient):
 async def test_complete_merchant_and_redemption_vertical_slice(async_client: AsyncClient):
     import random
     suffix = random.randint(10000000, 99999999)
+    # The discovery feed is proximity-ordered and page-limited, so a fixed
+    # storefront coordinate ties on distance with every earlier run's store and
+    # the reel can fall outside the page. A unique location per run keeps this
+    # store the single nearest result for the feed query made further down.
+    store_lat = round(random.uniform(21.00, 21.30), 6)
+    store_lon = round(random.uniform(78.95, 79.25), 6)
     owner_phone = f"+9198{suffix}"[:13]
     staff_phone = f"+9197{suffix}"[:13]
     s_resp = await async_client.post("/api/v1/auth/otp/send", json={"phone": owner_phone})
@@ -109,8 +115,8 @@ async def test_complete_merchant_and_redemption_vertical_slice(async_client: Asy
             "sector": "FOOD",
             "address_text": "Main Road, Sitabuldi, Nagpur",
             "city": "Nagpur",
-            "latitude": 21.1458,
-            "longitude": 79.0882,
+            "latitude": store_lat,
+            "longitude": store_lon,
             "kyc_doc_url": "https://res.cloudinary.com/fyndo/image/upload/kyc_mock.pdf"
         },
         headers=owner_headers
@@ -218,7 +224,9 @@ async def test_complete_merchant_and_redemption_vertical_slice(async_client: Asy
     assert dec_resp.json()["data"]["status"] == "APPROVED"
 
     # 7. Shopper Discovery Feed: Approved reel is now discoverable!
-    feed_resp = await async_client.get("/api/v1/reels/feed?lat=21.1460&lon=79.0880&radius_km=5&limit=50")
+    feed_resp = await async_client.get(
+        f"/api/v1/reels/feed?lat={store_lat}&lon={store_lon}&radius_km=5&limit=50"
+    )
     assert feed_resp.status_code == 200
     feed_items = feed_resp.json()["data"]
     assert len(feed_items) >= 1
@@ -253,7 +261,7 @@ async def test_complete_merchant_and_redemption_vertical_slice(async_client: Asy
     # 11. Cashier Terminal Verifies & Redeems Coupon
     redeem_resp = await async_client.post(
         "/api/v1/redemptions/verify",
-        json={"qr_payload": qr_payload, "bill_amount": 500.0, "cashier_lat": 21.1458, "cashier_lon": 79.0882},
+        json={"qr_payload": qr_payload, "bill_amount": 500.0, "cashier_lat": store_lat, "cashier_lon": store_lon},
         headers=pos_headers
     )
     assert redeem_resp.status_code == 200
@@ -262,7 +270,7 @@ async def test_complete_merchant_and_redemption_vertical_slice(async_client: Asy
     # 12. Replay Prevention: Attempting to reuse same QR fails
     replay_resp = await async_client.post(
         "/api/v1/redemptions/verify",
-        json={"qr_payload": qr_payload, "bill_amount": 500.0, "cashier_lat": 21.1458, "cashier_lon": 79.0882},
+        json={"qr_payload": qr_payload, "bill_amount": 500.0, "cashier_lat": store_lat, "cashier_lon": store_lon},
         headers=pos_headers
     )
     assert replay_resp.status_code == 409

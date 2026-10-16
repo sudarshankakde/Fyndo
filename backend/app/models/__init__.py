@@ -10,6 +10,12 @@ from app.models.coupon import (
     DiscountType,
     CouponStatus,
 )
+from app.models.notification import (
+    Notification,
+    DeviceToken,
+    NotificationCategory,
+    DevicePlatform,
+)
 
 __all__ = [
     "Base",
@@ -30,4 +36,8 @@ __all__ = [
     "RedemptionsLedger",
     "DiscountType",
     "CouponStatus",
+    "Notification",
+    "DeviceToken",
+    "NotificationCategory",
+    "DevicePlatform",
 ]

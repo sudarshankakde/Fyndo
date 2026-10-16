@@ -76,6 +76,11 @@ graph TD
   - Automatically generates WebP poster thumbnails from the first frame (`so_0` or `so_auto`) with zero backend processing overhead.
 - **Global CDN Delivery**:
   - High-speed content delivery via Cloudinary's multi-CDN fabric.
+- **Hardened Server-Side Fallback** (`POST /media/upload`):
+  - Streams uploads to disk with a hard byte cap, verifies the real content type from magic bytes
+    (defeating extension spoofing), and derives an optional ffmpeg poster frame.
+  - All blocking work (disk I/O, SHA-256 hashing, ffmpeg) runs in a worker thread via
+    `run_in_threadpool`, so large uploads never block the event loop.
 
 ### 2.3 Anti-Fraud & Dynamic TOTP Engine
 - **Algorithm**: RFC 6238 Time-Based One-Time Password (TOTP) customized for 60-second time steps.
@@ -110,6 +115,36 @@ graph TD
   - `uiSlice`: Language selection (`EN`/`HI`/`MR`), active radius filter (2km/5km/10km), bottom sheets.
   - `scannerSlice`: Cashier POS scanner status, camera torch, daily redemption counters.
 
+### 2.6 Observability & Audit Logging
+- **Structured Logging**: stdlib `logging` with `contextvars`-based request correlation. Every request
+  is stamped with a `request_id` (validated or generated, echoed back as `X-Request-ID`), the
+  authenticated `user_id` and the resolved client IP.
+- **Two formatters**: single-line **JSON** in production (`LOG_FORMAT=json`) and a compact **human**
+  line in development, both driven by `configure_logging()` in `app/core/logging_config.py`.
+- **Request Middleware**: a raw ASGI `RequestLoggingMiddleware` (not `BaseHTTPMiddleware`) emits exactly
+  one access record per request — `INFO` below 500, `ERROR` at or above — with method, path, status and
+  `duration_ms`. Raw ASGI is used deliberately so streaming media responses are never buffered.
+- **Audit Trail**: `app/core/audit.py` exposes `audit_log(action, actor, target, outcome, **details)`,
+  routed to the dedicated `fyndo.audit` logger. Every state change records actor, role, target, outcome
+  and a structured detail bag. Audit records land in their own `audit.log` stream so they can be shipped
+  or retained independently of application noise.
+- **Sinks**: console plus rotating files (`fyndo.log`, `audit.log`) sized by `LOG_MAX_BYTES` with
+  `LOG_BACKUP_COUNT` generations. Third-party loggers (`uvicorn.access`, `sqlalchemy.engine`, `httpx`,
+  `httpcore`, `multipart`) are pinned to `WARNING` to keep signal high.
+
+### 2.7 Notification & Push Service
+- **In-App Inbox**: `notifications` table (see Database Design §2.12) is the durable source of truth.
+  Alerts are created as a side effect of domain events — coupon claimed/redeemed, merchant KYC decided,
+  reel moderated, admin broadcasts — never synchronously coupled to the user-facing response.
+- **Best-Effort Dispatch**: `NotificationService.notify_safe()` swallows dispatch failures and logs a
+  warning, so a broken alert can never roll back the mutation that triggered it.
+- **Push Fan-Out**: `PushService` batches up to 100 messages per call to the Expo Push Service
+  (`https://exp.host/--/api/v2/push/send`), which fronts FCM and APNs. Active tokens come from
+  `device_tokens` (see Database Design §2.13); dispatch runs as a detached `asyncio` task.
+- **Client Registration**: the mobile app requests notification permission after sign-in, registers its
+  Expo push token, and unregisters it on sign-out. The unread badge is hydrated from
+  `GET /notifications/unread-count`.
+
 ---
 
 ## 3. Storage & Caching Architecture
@@ -118,9 +153,12 @@ graph TD
 |---|---|---|---|
 | **Primary Data** | PostgreSQL 16 | Relational tables, spatial data, ledger | Persistent |
 | **Cache & Sessions** | Redis 7 | JWT blacklist, OTP secrets, Rate limits | TTL 2m to 24h |
+| **Feed Page Cache** | Redis 7 | Serialized proximity feed pages keyed by coords / sector / cursor / viewer | TTL 30s |
 | **Videos & Thumbnails**| Cloudinary | Merchant vertical reels, auto-extracted poster WebP images | Persistent (Cloudinary CDN) |
 | **Merchant KYC Docs** | Cloudinary | Encrypted/authenticated upload of GSTIN/Gumasta PDFs | Persistent (Restricted access) |
 | **Static App Assets** | Global CDN | Web app bundle, icons, fonts | Edge caching (Cache-Control) |
+| **Alerts & Push Tokens** | PostgreSQL 16 | `notifications` inbox + `device_tokens` registry | Purged after `NOTIFICATION_RETENTION_DAYS` |
+| **Request & Audit Logs** | Rotating local files | `fyndo.log` (app) and `audit.log` (state changes) | Rotated at `LOG_MAX_BYTES` × `LOG_BACKUP_COUNT` |
 
 ---
 
@@ -131,4 +169,12 @@ graph TD
   - Public OTP endpoints: 3 requests per 10 minutes per IP.
   - Feed queries: 60 requests per minute per authenticated user.
   - POS Scanner redemption: 30 requests per minute per merchant staff terminal.
+- **Double-Spend Prevention**: Redemption is committed through an atomic single-winner SQL guard
+  (`UPDATE ... WHERE status = 'CLAIMED'`); when the row count is not exactly 1 the request is
+  rejected with `409`. This reinforces the Redis write-lock so two concurrent cashier scans cannot
+  both redeem the same voucher.
+- **HTTP Hardening**: Raw-ASGI middleware adds `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`,
+  `Referrer-Policy`, `Permissions-Policy` and `Cross-Origin-Opener-Policy` (plus HSTS in production),
+  and rejects request bodies beyond `MAX_REQUEST_BYTES` with `413` before routing. CORS is registered
+  last so it stays outermost and decorates every response — including the `413`.
 - **Data Protection**: Strict row-level access control ensuring cashiers can only query their own merchant's coupons.

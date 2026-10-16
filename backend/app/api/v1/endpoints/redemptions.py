@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from typing import Annotated, Optional, Tuple
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from app.api.v1.endpoints.auth import get_current_user
@@ -22,6 +22,7 @@ from app.schemas.coupon import (
     RedemptionVerifyRequest,
     RedemptionVerifyResponse,
 )
+from app.services.redemption_alerts import announce_redemption
 from app.services.totp import TotpService
 from app.utils.geo import calculate_haversine_distance
 
@@ -142,11 +143,25 @@ async def verify_and_redeem(
                     detail=f"Cashier location exceeds allowed store perimeter ({distance_offset}m away)."
                 )
 
-    # Commit redemption
+    # Commit redemption through an atomic single-winner guard: the UPDATE only
+    # succeeds while the claim is still CLAIMED, so two cashiers scanning the
+    # same voucher concurrently cannot double-spend it.
     now = datetime.now(timezone.utc)
-    coupon.status = CouponStatus.REDEEMED
-    coupon.redeemed_at = now
-    coupon.redeemed_by_staff_id = staff_id
+    claim_result = await db.execute(
+        update(UserCoupon)
+        .where(UserCoupon.id == coupon.id, UserCoupon.status == CouponStatus.CLAIMED)
+        .values(
+            status=CouponStatus.REDEEMED,
+            redeemed_at=now,
+            redeemed_by_staff_id=staff_id,
+        )
+        .execution_options(synchronize_session=False)
+    )
+    if claim_result.rowcount != 1:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This coupon has already been redeemed.",
+        )
 
     discount_type = coupon.template.discount_type.value if hasattr(coupon.template.discount_type, "value") else str(coupon.template.discount_type)
     discount_applied = calculate_discount(
@@ -169,6 +184,9 @@ async def verify_and_redeem(
     await db.flush()
 
     customer_name = coupon.user.full_name or coupon.user.phone
+    await announce_redemption(
+        db, coupon=coupon, ledger=ledger_entry, merchant_id=staff_merchant_id, method="QR"
+    )
 
     return ResponseEnvelope(
         data=RedemptionVerifyResponse(
@@ -215,11 +233,26 @@ async def verify_backup_pin(
     if not TotpService.verify_backup_pin(coupon.totp_secret, request.backup_pin):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired backup PIN.")
 
+    # Atomic single-winner guard (see /redemptions/verify) — the backup PIN may
+    # only ever be consumed once, even under concurrent terminal requests.
     now = datetime.now(timezone.utc)
-    coupon.status = CouponStatus.REDEEMED
-    coupon.redeemed_at = now
-    coupon.backup_pin_used_at = now
-    coupon.redeemed_by_staff_id = staff_id
+    claim_result = await db.execute(
+        update(UserCoupon)
+        .where(UserCoupon.id == coupon.id, UserCoupon.status == CouponStatus.CLAIMED)
+        .values(
+            status=CouponStatus.REDEEMED,
+            redeemed_at=now,
+            backup_pin_used_at=now,
+            redeemed_by_staff_id=staff_id,
+        )
+        .execution_options(synchronize_session=False)
+    )
+    if claim_result.rowcount != 1:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This coupon has already been redeemed.",
+        )
+
     discount_type = coupon.template.discount_type.value if hasattr(coupon.template.discount_type, "value") else str(coupon.template.discount_type)
     discount = calculate_discount(discount_type, float(coupon.template.discount_value), request.bill_amount)
     ledger = RedemptionsLedger(
@@ -234,6 +267,9 @@ async def verify_backup_pin(
     )
     db.add(ledger)
     await db.flush()
+    await announce_redemption(
+        db, coupon=coupon, ledger=ledger, merchant_id=staff_merchant_id, method="BACKUP_PIN"
+    )
     return ResponseEnvelope(
         data=RedemptionVerifyResponse(
             redemption_id=ledger.id,

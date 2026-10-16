@@ -33,6 +33,8 @@ Core user account record supporting shoppers, merchants, and administrators.
 | `phone` | `VARCHAR(15)` | `UNIQUE NOT NULL` | Indian phone number with prefix (`+919876543210`) |
 | `full_name` | `VARCHAR(100)` | `NULL` | User's full name |
 | `email` | `VARCHAR(255)` | `NULL` | Optional email address |
+| `username` | `VARCHAR(30)` | `NULL` | Public display handle shown on reel comments |
+| `profile_image_url` | `VARCHAR(500)` | `NULL` | Avatar shown alongside reel comments |
 | `password_hash` | `VARCHAR(255)` | `NULL` | Bcrypt hash for Super Admin / credential logins |
 | `role` | `VARCHAR(20)` | `NOT NULL DEFAULT 'SHOPPER'` | Enum: `SHOPPER`, `MERCHANT`, `SUPER_ADMIN` |
 | `preferred_language` | `VARCHAR(5)` | `NOT NULL DEFAULT 'en'` | Enum: `en`, `hi`, `mr` |
@@ -91,7 +93,9 @@ Short video reels uploaded by verified merchants.
 | `video_url` | `VARCHAR(500)` | `NOT NULL` | Streamable MP4/WebM video CDN URL |
 | `video_hls_url` | `VARCHAR(500)` | `NULL` | Future HLS `playlist.m3u8` CDN URL (deferred) |
 | `thumbnail_url` | `VARCHAR(500)` | `NOT NULL` | Poster thumbnail CDN URL |
+| `cloudinary_public_id` | `VARCHAR(255)` | `NULL` | Cloudinary asset identifier for lifecycle management |
 | `audio_type` | `VARCHAR(20)` | `NOT NULL` | Enum: `CAMERA_MIC`, `VOICEOVER` |
+| `allow_comments` | `BOOLEAN` | `NOT NULL DEFAULT true` | Per-reel comments toggle |
 | `status` | `VARCHAR(30)` | `NOT NULL DEFAULT 'PENDING_MODERATION'` | Enum: `PENDING_MODERATION`, `APPROVED`, `REJECTED` |
 | `rejection_reason` | `TEXT` | `NULL` | Admin rejection feedback |
 | `views_count` | `INTEGER` | `NOT NULL DEFAULT 0` | Total shopper view impressions |
@@ -134,6 +138,7 @@ Individual instances of coupons claimed by shoppers into their wallet.
 | `claimed_at` | `TIMESTAMPTZ` | `NOT NULL DEFAULT NOW()` | Claim timestamp |
 | `expires_at` | `TIMESTAMPTZ` | `NOT NULL` | Exact expiration timestamp |
 | `redeemed_at` | `TIMESTAMPTZ` | `NULL` | In-store verification timestamp |
+| `backup_pin_used_at` | `TIMESTAMPTZ` | `NULL` | When the offline backup PIN was consumed (single-use) |
 | `redeemed_by_staff_id` | `UUID` | `NULL REFERENCES merchant_staff(id)` | Staff terminal verifying code |
 
 ---
@@ -147,6 +152,7 @@ Immutable financial and audit ledger verifying each physical in-store redemption
 | `user_coupon_id` | `UUID` | `UNIQUE NOT NULL REFERENCES user_coupons(id)` | Target claimed coupon |
 | `merchant_id` | `UUID` | `NOT NULL REFERENCES merchants(id)` | Merchant honoring discount |
 | `staff_id` | `UUID` | `NULL REFERENCES merchant_staff(id)` | Staff member who scanned QR |
+| `bill_amount` | `NUMERIC(10, 2)` | `NOT NULL DEFAULT 0` | Pre-discount bill total entered at the POS terminal |
 | `discount_applied` | `NUMERIC(10, 2)` | `NOT NULL` | Value of discount granted |
 | `verified_location` | `geography(Point, 4326)`| `NULL` | GPS coordinates of cashier during scan |
 | `distance_from_shop_m`| `INTEGER` | `NULL` | Distance offset in meters (anti-spoof check) |
@@ -169,6 +175,89 @@ Super admin actions tracking moderation decisions.
 
 ---
 
+### 2.9 `reel_views`
+Deduplicated reel impressions (one per viewer per day); source of truth behind `reels.views_count`.
+
+| Column | Type | Constraints | Description |
+|---|---|---|---|
+| `id` | `UUID` | `PRIMARY KEY DEFAULT gen_random_uuid()` | Unique view identifier |
+| `reel_id` | `UUID` | `NOT NULL REFERENCES reels(id) ON DELETE CASCADE` | Watched reel |
+| `user_id` | `UUID` | `NULL REFERENCES users(id) ON DELETE SET NULL` | Authenticated viewer, when present |
+| `viewer_key` | `VARCHAR(128)` | `NULL` | Anonymised fingerprint for guest viewers |
+| `created_at` | `TIMESTAMPTZ` | `NOT NULL DEFAULT NOW()` | View timestamp (daily dedup window key) |
+
+---
+
+### 2.10 `reel_likes`
+One like per user per reel.
+
+| Column | Type | Constraints | Description |
+|---|---|---|---|
+| `id` | `UUID` | `PRIMARY KEY DEFAULT gen_random_uuid()` | Unique like identifier |
+| `reel_id` | `UUID` | `NOT NULL REFERENCES reels(id) ON DELETE CASCADE` | Liked reel |
+| `user_id` | `UUID` | `NOT NULL REFERENCES users(id) ON DELETE CASCADE` | Liking user |
+| `created_at` | `TIMESTAMPTZ` | `NOT NULL DEFAULT NOW()` | Like timestamp |
+
+> Unique constraint `uq_reel_like_user (reel_id, user_id)` prevents duplicate likes.
+
+---
+
+### 2.11 `reel_comments`
+Single-level threaded comments on a reel (replies are flattened to one level for stable threading).
+
+| Column | Type | Constraints | Description |
+|---|---|---|---|
+| `id` | `UUID` | `PRIMARY KEY DEFAULT gen_random_uuid()` | Unique comment identifier |
+| `reel_id` | `UUID` | `NOT NULL REFERENCES reels(id) ON DELETE CASCADE` | Commented reel |
+| `user_id` | `UUID` | `NOT NULL REFERENCES users(id) ON DELETE CASCADE` | Comment author |
+| `parent_comment_id` | `UUID` | `NULL REFERENCES reel_comments(id) ON DELETE CASCADE` | Thread parent (merchant replies) |
+| `text` | `TEXT` | `NOT NULL` | Comment body |
+| `created_at` | `TIMESTAMPTZ` | `NOT NULL DEFAULT NOW()` | Posted timestamp |
+
+---
+
+### 2.12 `notifications`
+Per-user in-app alert inbox. Each row is one alert; it may also be mirrored to the user's registered devices as a push notification.
+
+| Column | Type | Constraints | Description |
+|---|---|---|---|
+| `id` | `UUID` | `PRIMARY KEY DEFAULT gen_random_uuid()` | Unique alert identifier |
+| `user_id` | `UUID` | `NOT NULL REFERENCES users(id) ON DELETE CASCADE` | Recipient (indexed) |
+| `category` | `VARCHAR(20)` | `NOT NULL DEFAULT 'UPDATES'` | Enum: `DEALS`, `UPDATES`, `RADAR`, `SYSTEM` |
+| `event_type` | `VARCHAR(50)` | `NOT NULL` | Machine event key, e.g. `coupon_claimed`, `coupon_redeemed`, `merchant_kyc_approved`, `reel_approved` |
+| `title` | `VARCHAR(140)` | `NOT NULL` | Alert headline |
+| `body` | `TEXT` | `NOT NULL` | Alert body copy |
+| `image_url` | `VARCHAR(500)` | `NULL` | Optional thumbnail shown in the inbox card |
+| `action_type` | `VARCHAR(20)` | `NULL` | Deep-link target: `COUPON`, `MERCHANT`, `REEL` |
+| `action_ref` | `VARCHAR(64)` | `NULL` | Identifier for the deep-link target |
+| `payload` | `JSON` | `NULL` | Extra rendering data (`store_name`, `subtitle`, `remaining_passes`, …) |
+| `is_read` | `BOOLEAN` | `NOT NULL DEFAULT false` | Unread flag backing the tab badge (indexed) |
+| `read_at` | `TIMESTAMPTZ` | `NULL` | When the alert was opened |
+| `push_sent` | `BOOLEAN` | `NOT NULL DEFAULT false` | True once a push dispatch was attempted |
+| `created_at` | `TIMESTAMPTZ` | `NOT NULL DEFAULT NOW()` | Creation timestamp, the inbox sort key (indexed) |
+| `expires_at` | `TIMESTAMPTZ` | `NULL` | Retention cutoff; rows older than `NOTIFICATION_RETENTION_DAYS` are purged |
+
+> The inbox is paged with a keyset cursor (`created_at`, `id`) rather than `OFFSET`, so deep pages stay O(log n).
+
+---
+
+### 2.13 `device_tokens`
+Registered push targets (Expo push tokens, fronting FCM and APNs) belonging to signed-in devices.
+
+| Column | Type | Constraints | Description |
+|---|---|---|---|
+| `id` | `UUID` | `PRIMARY KEY DEFAULT gen_random_uuid()` | Unique device identifier |
+| `user_id` | `UUID` | `NOT NULL REFERENCES users(id) ON DELETE CASCADE` | Owning user (indexed) |
+| `token` | `VARCHAR(255)` | `NOT NULL UNIQUE` | Expo push token; re-registering reactivates the row |
+| `platform` | `VARCHAR(20)` | `NOT NULL DEFAULT 'ANDROID'` | Enum: `ANDROID`, `IOS`, `WEB` |
+| `is_active` | `BOOLEAN` | `NOT NULL DEFAULT true` | Cleared on sign-out; inactive tokens are never pushed to |
+| `created_at` | `TIMESTAMPTZ` | `NOT NULL DEFAULT NOW()` | First registration |
+| `updated_at` | `TIMESTAMPTZ` | `NOT NULL DEFAULT NOW()` | Last registration / platform change |
+
+> A token is globally unique, so signing in on a device that was previously linked to another account re-assigns the row to the current user.
+
+---
+
 ## 3. Database Indexes & Performance Optimization
 
 ```sql
@@ -185,7 +274,23 @@ CREATE INDEX idx_user_coupons_expires_at ON user_coupons(expires_at) WHERE statu
 
 -- Ledger lookup
 CREATE INDEX idx_ledger_merchant_date ON redemptions_ledger(merchant_id, created_at DESC);
+
+-- Proximity feed: bounding-box prefilter + sector narrowing. These are applied
+-- idempotently by ensure_compatibility_schema() (CREATE INDEX IF NOT EXISTS).
+CREATE INDEX IF NOT EXISTS ix_merchants_geo ON merchants (latitude, longitude);
+CREATE INDEX IF NOT EXISTS ix_merchants_sector ON merchants (sector);
+CREATE INDEX IF NOT EXISTS ix_reels_status_created ON reels (status, created_at);
+
+-- Engagement aggregates & daily view dedup
+CREATE INDEX IF NOT EXISTS ix_reel_views_reel_created ON reel_views (reel_id, created_at);
+CREATE INDEX IF NOT EXISTS ix_reel_comments_reel_created ON reel_comments (reel_id, created_at);
+
+-- Redemptions history per merchant
+CREATE INDEX IF NOT EXISTS ix_redemptions_ledger_merchant_created
+    ON redemptions_ledger (merchant_id, created_at);
 ```
+
+> Model-level indexes also cover the notification domain: `notifications(user_id)`, `notifications(category)`, `notifications(is_read)`, `notifications(created_at)` and `device_tokens(user_id)`, plus the unique `device_tokens(token)`.
 
 ---
 

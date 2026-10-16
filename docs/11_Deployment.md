@@ -41,7 +41,10 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://fyndo_user:fyndo_secure_password@postgres:5432/fyndo_db
       REDIS_URL: redis://redis:6379
-      JWT_ACCESS_SECRET: your_super_secret_jwt_key
+      # Inject strong secrets from the environment / a secret manager.
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      SUPER_ADMIN_PASSWORD: ${SUPER_ADMIN_PASSWORD}
     depends_on:
       - postgres
       - redis
@@ -91,6 +94,15 @@ volumes:
 | `CLOUDINARY_API_SECRET`| Cloudinary API Secret for backend signature generation | All |
 | `CLOUDINARY_URL` | Cloudinary complete connection string | All |
 | `SMS_GATEWAY_API_KEY`| Twilio / Gupshup API Key for OTP dispatch | Staging / Prod |
+| `SUPER_ADMIN_PASSWORD`| Super Admin credential — weak/default values are rejected in production | Staging / Prod |
+| `BACKEND_CORS_ORIGINS` | Comma-separated allowed origins (wildcard forbidden with credentials in production) | All |
+| `MAX_REQUEST_BYTES` | Hard request-body ceiling in bytes (default `83886080`) | All |
+| `REDIS_REQUIRED` | When `true`, an unreachable Redis is a hard failure instead of an in-memory fallback (defaults to `true` in production) | Staging / Prod |
+| `MEDIA_MAX_VIDEO_MB` | Max reel video upload size in MB (default `60`) | All |
+| `MEDIA_MAX_IMAGE_MB` | Max image / KYC upload size in MB (default `8`) | All |
+| `ENABLE_RATE_LIMITING` | Master toggle for Redis fixed-window rate limiting (default `true`) | All |
+| `FEED_RATE_LIMIT_PER_MIN` | Feed requests allowed per minute per identity (default `60`) | All |
+| `POS_RATE_LIMIT_PER_MIN` | POS redemption requests allowed per minute per terminal (default `30`) | All |
 
 ---
 

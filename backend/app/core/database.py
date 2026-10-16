@@ -33,9 +33,21 @@ async_session_factory = async_sessionmaker(
 
 _compatibility_schema_ready = False
 
+# Indexes backing the proximity feed and reel engagement queries. Created with
+# IF NOT EXISTS so they are safe to apply to existing databases.
+_PERFORMANCE_INDEXES = (
+    "CREATE INDEX IF NOT EXISTS ix_merchants_geo ON merchants (latitude, longitude)",
+    "CREATE INDEX IF NOT EXISTS ix_merchants_sector ON merchants (sector)",
+    "CREATE INDEX IF NOT EXISTS ix_reels_status_created ON reels (status, created_at)",
+    "CREATE INDEX IF NOT EXISTS ix_reel_views_reel_created ON reel_views (reel_id, created_at)",
+    "CREATE INDEX IF NOT EXISTS ix_reel_comments_reel_created ON reel_comments (reel_id, created_at)",
+    "CREATE INDEX IF NOT EXISTS ix_redemptions_ledger_merchant_created "
+    "ON redemptions_ledger (merchant_id, created_at)",
+)
+
 
 async def ensure_compatibility_schema() -> None:
-    """Adds columns introduced after the initial beta schema when needed."""
+    """Adds columns/indexes introduced after the initial beta schema when needed."""
     global _compatibility_schema_ready
     if _compatibility_schema_ready:
         return
@@ -88,6 +100,8 @@ async def ensure_compatibility_schema() -> None:
                     "parent_comment_id UUID NULL"
                 )
             )
+        for statement in _PERFORMANCE_INDEXES:
+            await conn.execute(text(statement))
     _compatibility_schema_ready = True
 
 

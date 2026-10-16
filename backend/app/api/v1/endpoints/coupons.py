@@ -6,14 +6,21 @@ from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from app.api.v1.endpoints.auth import get_current_user
+from app.core.audit import audit_log
 from app.core.database import get_db
 from app.models.coupon import CouponStatus, CouponTemplate, UserCoupon
+from app.models.notification import NotificationCategory
 from app.models.user import User
 from app.schemas.common import ResponseEnvelope
 from app.schemas.coupon import CouponClaimResponse, DynamicQrResponse, UserCouponWalletItem
+from app.services.notification_service import NotificationService
 from app.services.totp import TotpService
 
 router = APIRouter()
+
+
+def _role(role: object) -> str:
+    return str(getattr(role, "value", role))
 
 
 @router.get("/coupons/wallet", response_model=ResponseEnvelope[List[UserCouponWalletItem]])
@@ -124,6 +131,25 @@ async def claim_coupon(
     await db.refresh(user_coupon)
 
     u_status = user_coupon.status.value if hasattr(user_coupon.status, "value") else str(user_coupon.status)
+    audit_log(
+        "coupon.claim",
+        actor_id=current_user.id,
+        actor_role=_role(current_user.role),
+        target_type="user_coupon",
+        target_id=user_coupon.id,
+        coupon_template_id=template.id,
+        merchant_id=template.merchant_id,
+    )
+    await NotificationService.notify_safe(
+        db,
+        user_id=current_user.id,
+        event_type="coupon_claimed",
+        title="Coupon added to wallet",
+        body=f"\u201c{template.title}\u201d is ready. Show the QR at the store to redeem.",
+        category=NotificationCategory.DEALS.value,
+        action_type="COUPON",
+        action_ref=str(user_coupon.id),
+    )
     return ResponseEnvelope(
         data=CouponClaimResponse(
             user_coupon_id=user_coupon.id,

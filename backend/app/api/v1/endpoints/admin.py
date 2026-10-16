@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from app.api.v1.endpoints.auth import get_current_user
+from app.core.audit import audit_log
 from app.core.database import get_db
 from app.models.merchant import KycStatus, Merchant
 from app.models.reel import Reel, ReelStatus
@@ -23,13 +24,19 @@ from app.schemas.admin import (
 )
 from app.schemas.common import ResponseEnvelope
 from app.services.admin_service import AdminService
+from app.services.moderation_alerts import notify_merchant_decision, notify_reel_decision
 
 router = APIRouter()
 
 
+def _role(role: object) -> str:
+    return str(getattr(role, "value", role))
+
+
 async def get_current_admin(current_user: User = Depends(get_current_user)) -> User:
     """Dependency verifying Super Admin privileges."""
-    if current_user.role != UserRole.SUPER_ADMIN:
+    role = getattr(current_user.role, "value", current_user.role)
+    if str(role).strip().upper() != UserRole.SUPER_ADMIN.value:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Super Admin privileges required."
@@ -118,6 +125,22 @@ async def decide_merchant_kyc(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Decision must be 'APPROVE' or 'REJECT'.")
 
     await db.flush()
+    audit_log(
+        "merchant.kyc_decision",
+        actor_id=admin.id,
+        actor_role=_role(admin.role),
+        target_type="merchant",
+        target_id=merchant.id,
+        decision=decision,
+        kyc_status=merchant.kyc_status.value,
+        rejection_reason=merchant.kyc_rejection_reason,
+    )
+    await notify_merchant_decision(
+        db,
+        merchant=merchant,
+        decision=decision,
+        rejection_reason=payload.rejection_reason,
+    )
     return ResponseEnvelope(
         data={
             "merchant_id": str(merchant.id),
@@ -136,6 +159,14 @@ async def create_admin_merchant(
 ):
     """Creates a new merchant store directly with associated owner and staff PIN."""
     merchant = await AdminService.create_merchant(payload, db)
+    audit_log(
+        "merchant.create",
+        actor_id=admin.id,
+        actor_role=_role(admin.role),
+        target_type="merchant",
+        target_id=merchant.id,
+        business_name=merchant.business_name,
+    )
     return ResponseEnvelope(data=merchant, message="Merchant store registered successfully.")
 
 
@@ -150,6 +181,14 @@ async def update_admin_merchant(
     updated = await AdminService.update_merchant(merchant_id, payload, db)
     if not updated:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Merchant not found.")
+    audit_log(
+        "merchant.update",
+        actor_id=admin.id,
+        actor_role=_role(admin.role),
+        target_type="merchant",
+        target_id=merchant_id,
+        fields=sorted(payload.model_dump(exclude_unset=True).keys()),
+    )
     return ResponseEnvelope(data={"merchant_id": str(merchant_id)}, message="Merchant updated successfully.")
 
 
@@ -162,6 +201,14 @@ async def update_admin_merchant_staff(
 ):
     """Sets or resets the 6-digit scanner PIN and staff name for a merchant terminal."""
     staff = await AdminService.update_staff_pin(merchant_id, payload, db)
+    audit_log(
+        "merchant.staff_credentials_update",
+        actor_id=admin.id,
+        actor_role=_role(admin.role),
+        target_type="merchant_staff",
+        target_id=staff.id,
+        merchant_id=merchant_id,
+    )
     return ResponseEnvelope(
         data={"staff_id": str(staff.id), "staff_name": staff.staff_name},
         message="Staff terminal credentials updated successfully."
@@ -186,7 +233,7 @@ async def decide_reel_moderation(
     db: AsyncSession = Depends(get_db)
 ):
     """Approves or rejects a reel in moderation queue."""
-    stmt = select(Reel).where(Reel.id == reel_id)
+    stmt = select(Reel).options(selectinload(Reel.merchant)).where(Reel.id == reel_id)
     res = await db.execute(stmt)
     reel = res.scalars().first()
     if not reel:
@@ -204,7 +251,20 @@ async def decide_reel_moderation(
     else:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Decision must be 'APPROVE' or 'REJECT'.")
 
+    await db.flush()
     status_str = reel.status.value if hasattr(reel.status, "value") else str(reel.status)
+    audit_log(
+        "reel.moderate",
+        actor_id=admin.id,
+        actor_role=_role(admin.role),
+        target_type="reel",
+        target_id=reel.id,
+        decision=decision_norm,
+        status=status_str,
+        rejection_reason=reel.rejection_reason,
+    )
+    owner_id = reel.merchant.user_id if reel.merchant else None
+    await notify_reel_decision(db, reel=reel, owner_id=owner_id, decision=decision_norm)
     return ResponseEnvelope(data={"reel_id": str(reel.id), "status": status_str}, message=message)
 
 
@@ -227,4 +287,11 @@ async def create_admin_reel(
 ):
     """Creates a new approved reel with attached coupon template directly."""
     reel_id = await AdminService.create_reel(payload, db)
+    audit_log(
+        "reel.create",
+        actor_id=admin.id,
+        actor_role=_role(admin.role),
+        target_type="reel",
+        target_id=reel_id,
+    )
     return ResponseEnvelope(data={"reel_id": str(reel_id)}, message="Reel and offer published to live feed.")

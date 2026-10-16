@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.context import set_user_id
 from app.core.database import get_db
 from app.core.security import decode_access_token
 from app.models.user import User
@@ -32,6 +33,7 @@ from app.services.session_service import SessionService
 
 router = APIRouter()
 security_bearer = HTTPBearer(auto_error=False)
+optional_bearer = HTTPBearer(auto_error=False)
 
 
 class AuthContext:
@@ -85,6 +87,32 @@ async def get_current_user(
             detail="User account not found or suspended."
         )
 
+    set_user_id(user.id)
+    return user
+
+
+async def get_optional_user(
+    credentials: Annotated[Optional[HTTPAuthorizationCredentials], Depends(optional_bearer)],
+    db: AsyncSession = Depends(get_db),
+) -> Optional[User]:
+    """Resolves the caller when a bearer token is present, otherwise None.
+
+    Used by public endpoints (feed, reel detail, view counting) that still
+    personalise their response for signed-in shoppers.
+    """
+    if not credentials:
+        return None
+    payload = decode_access_token(credentials.credentials)
+    if not payload or "sub" not in payload or payload.get("role") == "ROLE_CASHIER":
+        return None
+    try:
+        user_id = uuid.UUID(payload["sub"])
+    except (ValueError, TypeError):
+        return None
+    result = await db.execute(select(User).where(User.id == user_id, User.is_active.is_(True)))
+    user = result.scalars().first()
+    if user:
+        set_user_id(user.id)
     return user
 
 

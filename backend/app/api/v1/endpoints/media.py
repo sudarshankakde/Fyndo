@@ -1,37 +1,46 @@
-import os
-import shutil
-import uuid
+"""Media upload endpoints.
+
+Two supported flows, both hardened:
+
+  * `/media/sign-upload` — issues a short-lived Cloudinary signature so the
+    client uploads large 9:16 reels straight to the CDN (production path,
+    documented in docs/05_System_Architecture.md).
+  * `/media/upload` — streams the file to local storage through
+    `app/services/media_service.py`, enforcing size ceilings, magic-byte
+    content sniffing and an optional server-generated video poster.
+"""
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from starlette.concurrency import run_in_threadpool
+
 from app.api.v1.endpoints.auth import get_current_user
+from app.core.rate_limit import rate_limit
+from app.core.config import settings
 from app.models.user import User
 from app.schemas.common import ResponseEnvelope
 from app.schemas.media import SignUploadRequest, SignUploadResponse
 from app.services.cloudinary_service import CloudinaryService, validate_upload_target
+from app.services.media_service import MediaValidationError, store_upload
 
 router = APIRouter()
-
-# Local upload directory setup
-UPLOAD_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../uploads"))
-os.makedirs(UPLOAD_ROOT, exist_ok=True)
 
 
 @router.post("/media/sign-upload", response_model=ResponseEnvelope[SignUploadResponse])
 async def get_upload_signature(
     request: SignUploadRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _: None = Depends(rate_limit("media_sign", 60)),
 ):
-    """
-    Generates a secure cryptographic signature allowing direct client uploads
-    to Cloudinary. Bypasses backend video bandwidth consumption.
-    """
+    """Generates a signature allowing direct, bandwidth-free client uploads."""
     try:
         folder, resource_type = validate_upload_target(request.folder, request.resource_type)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
-    params = CloudinaryService.generate_upload_signature(folder=folder, resource_type=resource_type)
+    params = CloudinaryService.generate_upload_signature(
+        folder=folder, resource_type=resource_type
+    )
     return ResponseEnvelope(
         data=SignUploadResponse(**params),
-        message="Upload signature generated"
+        message="Upload signature generated",
     )
 
 
@@ -40,49 +49,33 @@ async def upload_media_file(
     file: UploadFile = File(...),
     folder: str = Form("reels"),
     current_user: User = Depends(get_current_user),
+    _: None = Depends(rate_limit("media_upload", 30)),
 ):
-    """
-    Direct file upload endpoint for user reels and store media.
-    Stores the uploaded video/image in the local uploads directory
-    and returns an accessible URL for streaming and thumbnail preview.
-    """
+    """Streams a reel/KYC file to storage with validation and thumbnail export."""
+    kind = "image" if (file.content_type or "").startswith("image/") else "video"
     try:
-        folder, _ = validate_upload_target(folder, "image" if file.content_type and file.content_type.startswith("image/") else "video")
+        folder, _ = validate_upload_target(folder, kind)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
 
-    if not file.filename:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No filename provided in upload."
-        )
+    try:
+        # Disk writes and the ffmpeg poster extraction are blocking, so they run
+        # in a worker thread to keep the event loop free for other requests.
+        result = await run_in_threadpool(store_upload, file, folder)
+    except MediaValidationError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message)
 
-    ext = os.path.splitext(file.filename)[1].lower()
-    allowed_exts = {".mp4", ".mov", ".webm", ".m4v", ".mkv", ".jpg", ".jpeg", ".png", ".webp"}
-    if ext not in allowed_exts:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Unsupported file format '{ext}'. Allowed: {', '.join(sorted(allowed_exts))}"
-        )
+    return ResponseEnvelope(data=result, message="File uploaded successfully.")
 
-    target_dir = os.path.join(UPLOAD_ROOT, folder)
-    os.makedirs(target_dir, exist_ok=True)
 
-    unique_filename = f"{uuid.uuid4().hex[:12]}_{os.path.basename(file.filename)}"
-    destination_path = os.path.join(target_dir, unique_filename)
-
-    with open(destination_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-
-    file_size = os.path.getsize(destination_path)
-    public_url = f"/uploads/{folder}/{unique_filename}"
-
+@router.get("/media/config", response_model=ResponseEnvelope[dict])
+async def media_pipeline_config(current_user: User = Depends(get_current_user)):
+    """Exposes the active upload limits so clients can pre-validate files."""
     return ResponseEnvelope(
         data={
-            "url": public_url,
-            "filename": unique_filename,
-            "size_bytes": file_size,
-            "folder": folder,
-        },
-        message="File uploaded successfully."
+            "max_video_mb": settings.MEDIA_MAX_VIDEO_MB,
+            "max_image_mb": settings.MEDIA_MAX_IMAGE_MB,
+            "reels_folder": "reels",
+            "kyc_folder": "kyc",
+        }
     )

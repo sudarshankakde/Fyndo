@@ -7,13 +7,13 @@ from fastapi.responses import JSONResponse
 from app.api.v1.api import api_router
 from app.core.config import settings
 from app.core.database import Base, engine, ensure_compatibility_schema
+from app.core.logging_config import configure_logging
+from app.core.logging_middleware import RequestLoggingMiddleware
+from app.core.middleware import MaxBodySizeMiddleware, SecurityHeadersMiddleware
 from app.core.redis import close_redis_client, get_redis_client
 import app.models  # Ensure all SQLAlchemy models are registered
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
-)
+configure_logging()
 logger = logging.getLogger("fyndo.main")
 
 
@@ -54,14 +54,21 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# CORS middleware configuration
+# Middleware stack. Starlette applies these in reverse registration order, so
+# the last middleware registered is outermost. Request logging is registered
+# last so it observes every request (including CORS preflights and the 413
+# emitted by MaxBodySizeMiddleware); CORS sits just inside it so every
+# response — including errors — is decorated with the CORS headers.
+app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(MaxBodySizeMiddleware, max_bytes=settings.MAX_REQUEST_BYTES)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.BACKEND_CORS_ORIGINS,
-    allow_credentials=True,
+    allow_credentials=settings.cors_allow_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(RequestLoggingMiddleware)
 
 
 @app.exception_handler(HTTPException)

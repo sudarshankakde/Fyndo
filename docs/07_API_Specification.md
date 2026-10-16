@@ -40,6 +40,7 @@
 | `404 Not Found` | Not Found | Reel, coupon, or merchant not found |
 | `409 Conflict` | Conflict | Coupon already claimed or already redeemed |
 | `410 Gone` | Expired | Dynamic TOTP QR code expired |
+| `413 Payload Too Large` | Too Large | Upload exceeds the configured media/request ceiling |
 | `429 Too Many Requests`| Rate Limited | Rate limit tripped |
 
 ---
@@ -377,6 +378,50 @@
 }
 ```
 
+### 3.4 Reel Engagement — Views, Likes & Comments
+- **`POST /reels/{reel_id}/view`** — Auth: Optional. Records a deduplicated daily view and atomically increments `views_count`. Rate-limited (600 / min).
+  - **Response `200 OK`**: `{ "success": true, "data": { "views_count": 1421, "counted": true } }` (`counted=false` when the viewer already watched today).
+- **`POST /reels/{reel_id}/like`** — Auth: Required (`ROLE_SHOPPER`). Toggles the caller's like. Rate-limited (120 / min).
+  - **Response `200 OK`**: `{ "success": true, "data": { "liked": true, "likes_count": 87 } }`
+- **`GET /reels/{reel_id}/comments`** — Auth: Public. Oldest first, capped at 200. Rate-limited (240 / min).
+- **`POST /reels/{reel_id}/comments`** — Auth: Required. Rate-limited (30 / min).
+  - **Response `201 Created`**: creates a comment; returns `403` when `allow_comments` is disabled on the reel.
+
+### 3.5 Media Pipeline Configuration
+- **Endpoint**: `GET /media/config`
+- **Auth**: Required
+- **Response `200 OK`**: Exposes the active upload ceilings so clients can pre-validate files.
+```json
+{
+  "success": true,
+  "data": {
+    "max_video_mb": 60,
+    "max_image_mb": 8,
+    "reels_folder": "reels",
+    "kyc_folder": "kyc"
+  }
+}
+```
+> Uploads exceeding these ceilings are rejected with `413 Payload Too Large` by the request-body guard before reaching the handler.
+
+### 3.6 System Health Probe
+- **Endpoint**: `GET /health`
+- **Auth**: Public
+- **Response `200 OK`**: Probes the database (`SELECT 1`) and Redis (`PING`).
+```json
+{
+  "success": true,
+  "data": {
+    "status": "healthy",
+    "service": "Fyndo Core API",
+    "environment": "development",
+    "database": "connected",
+    "cache": "connected"
+  }
+}
+```
+> `status` degrades to `degraded` when the database is unreachable; cache outages are reported per-dependency.
+
 ---
 
 ## 4. Coupon Wallet & Redemption Endpoints
@@ -496,4 +541,80 @@
 - **Endpoints**:
   - `GET /admin/reels?status=ALL|APPROVED|PENDING_MODERATION|REJECTED`: List all platform video reels.
   - `POST /admin/reels`: Direct publication of an approved reel with attached coupon template.
+
+---
+
+## 6. Notification Inbox & Push Endpoints
+
+All endpoints require a valid user access token. Alerts are written automatically as a side effect of
+domain events (coupon claimed/redeemed, merchant KYC decided, reel moderated); clients only read the
+inbox and manage their push registration.
+
+### 6.1 List Inbox
+- **Endpoint**: `GET /notifications`
+- **Auth**: Required
+- **Query Parameters**: `category` (`ALL|DEALS|UPDATES|RADAR|SYSTEM`), `unread_only` (bool), `limit` (1–100, default 30), `cursor` (opaque keyset cursor)
+- **Response `200 OK`**:
+```json
+{
+  "success": true,
+  "data": {
+    "items": [
+      {
+        "id": "b1f0c9d2-...",
+        "category": "DEALS",
+        "event_type": "coupon_claimed",
+        "title": "Coupon added to wallet",
+        "body": "“Flat 20% off” is ready. Show the QR at the store to redeem.",
+        "image_url": null,
+        "action_type": "COUPON",
+        "action_ref": "0c7d...",
+        "payload": null,
+        "is_read": false,
+        "created_at": "2026-10-17T09:12:44Z",
+        "expires_at": null
+      }
+    ],
+    "unread_count": 3,
+    "next_cursor": "MTc2MDY5...",
+    "has_more": true
+  }
+}
+```
+
+### 6.2 Unread Badge Count
+- **Endpoint**: `GET /notifications/unread-count`
+- **Auth**: Required
+- **Response `200 OK`**: `{ "success": true, "data": { "unread_count": 3 } }`
+
+### 6.3 Mark One Alert Read
+- **Endpoint**: `POST /notifications/:id/read`
+- **Auth**: Required
+- **Response `200 OK`**: `{ "success": true, "data": { "notification_id": "b1f0...", "is_read": true } }`
+- **Errors**: `404` when the alert does not belong to the caller.
+
+### 6.4 Mark All Alerts Read
+- **Endpoint**: `POST /notifications/read-all`
+- **Auth**: Required
+- **Response `200 OK`**: `{ "success": true, "data": { "updated": 3 } }`
+
+### 6.5 Register Push Device
+- **Endpoint**: `POST /notifications/device-token`
+- **Auth**: Required
+- **Request Body**:
+```json
+{
+  "token": "ExponentPushToken[xxxxxxxxxxxxxxxxxxxxxx]",
+  "platform": "ANDROID"
+}
+```
+- **Response `201 Created`**: `{ "success": true, "data": { "id": "...", "platform": "ANDROID", "is_active": true } }`
+- **Behaviour**: re-registering an existing token reactivates it and re-assigns it to the current user.
+
+### 6.6 Unregister Push Device
+- **Endpoint**: `POST /notifications/device-token/unregister`
+- **Auth**: Required
+- **Request Body**: `{ "token": "ExponentPushToken[xxxxxxxxxxxxxxxxxxxxxx]" }`
+- **Response `200 OK`**: `{ "success": true, "data": { "removed": true } }`
+- **Behaviour**: idempotent — `removed` is `false` when the token was already inactive. Called on sign-out.
 
