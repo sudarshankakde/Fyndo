@@ -50,9 +50,12 @@
 - [x] Backend: Proximity search with radius filters (2 km, 5 km, 10 km) and shopper wallet endpoints.
 - [x] Tests: Distance calculation accuracy, coupon claim and wallet queries.
 - [x] Frontend: `FEED-01` 9:16 vertical reel feed with auto-scroll, distance badges, and "Claim Coupon" button with confetti.
+- [x] Mobile (React Native / Expo): Glacier Minimal 9:16 discovery feed with hardware video playback, spinning vinyl audio disc, frosted filter switcher, and floating voucher CTA.
 
 ### Phase 5: Anti-Fraud Redemption Loop (Vertical Slice 5)
 - [x] DB: `user_coupons`, `redemptions_ledger` tables.
 - [x] Backend: RFC 6238 TOTP engine (60s rotation), cashier verification endpoint with geofence check.
 - [x] Tests: Replay rejection, expired QR failure, double-spend prevention.
 - [x] Frontend: `WALLET-02` In-Store Dynamic QR with 60s countdown ring, `POS-01` Cashier Scanner Terminal.
+- [x] Mobile (React Native / Expo): High-speed Cashier POS QR scanner with animated laser reticle, 4-digit counter code keypad, instant server verification, and Merchant Creator Studio with sector validity builder.
+
