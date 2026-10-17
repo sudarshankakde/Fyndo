@@ -13,7 +13,10 @@ if hasattr(sys.stderr, "reconfigure"):
 
 ROOT_DIR = Path(__file__).parent.resolve()
 BACKEND_DIR = ROOT_DIR / "backend"
-FRONTEND_DIR = ROOT_DIR / "frontend"
+
+# Locate frontend: prioritizes sibling Fyndo-Frontend repo, falls back to local frontend
+SIBLING_FRONTEND = ROOT_DIR.parent / "Fyndo-Frontend"
+FRONTEND_DIR = SIBLING_FRONTEND if SIBLING_FRONTEND.exists() else (ROOT_DIR / "frontend")
 
 
 def find_backend_python():
