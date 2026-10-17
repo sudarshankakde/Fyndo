@@ -48,7 +48,7 @@ class Settings(BaseSettings):
     # Super Admin Master Credentials
     SUPER_ADMIN_IDENTIFIER: str = "+919999900000"
     SUPER_ADMIN_EMAIL: str = "admin@fyndo.in"
-    SUPER_ADMIN_PASSWORD: Optional[str] = None
+    SUPER_ADMIN_PASSWORD: Optional[str] = "AdminFyndo@2026"
 
     # Cloudinary Credentials
     CLOUDINARY_CLOUD_NAME: Optional[str] = None

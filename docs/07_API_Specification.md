@@ -458,7 +458,38 @@
 }
 ```
 
-### 4.3 Cashier Redemption Verification (POS Scan)
+### 4.3 Cashier QR Pre-Validation & Preview
+- **Endpoint**: `POST /redemptions/preview`
+- **Auth**: Required (`ROLE_CASHIER` or `ROLE_MERCHANT`)
+- **Request Body**:
+```json
+{
+  "qr_payload": "eyJjbGFpbV9pZCI6IjgxMjBmYTQ5Li4iLCJ0b2tlbiI6IjU4MjkwMSIsInRzIjoxNzI4MTMwMjAwfQ=="
+}
+```
+- **Response `200 OK`**:
+```json
+{
+  "success": true,
+  "data": {
+    "user_coupon_id": "8120fa49-...",
+    "coupon_title": "Flat ₹500 Off",
+    "discount_type": "FLAT_AMOUNT",
+    "discount_value": 500.0,
+    "min_order_amount": 1500.0,
+    "customer_name": "Rahul M.",
+    "customer_phone": "+919876543210"
+  },
+  "message": "Voucher verified successfully for this store."
+}
+```
+- **Errors**:
+  - `400 Bad Request`: Unrecognized or malformed QR code.
+  - `403 Forbidden`: Wrong store (e.g. coupon belongs to a different merchant).
+  - `409 Conflict`: Coupon already redeemed earlier.
+  - `410 Gone`: Coupon expired or 60s dynamic TOTP token expired.
+
+### 4.4 Cashier Redemption Verification (POS Scan)
 - **Endpoint**: `POST /redemptions/verify`
 - **Auth**: Required (`ROLE_CASHIER` or `ROLE_MERCHANT`)
 - **Request Body**:

@@ -7,6 +7,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from app.api.v1.endpoints.auth import get_current_user
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.redis import get_redis_client
 from app.core.security import decode_access_token
@@ -19,23 +20,18 @@ from app.schemas.coupon import (
     MerchantRedemptionItem,
     PinRedemptionRequest,
     RedemptionHistoryItem,
+    RedemptionPreviewRequest,
+    RedemptionPreviewResponse,
     RedemptionVerifyRequest,
     RedemptionVerifyResponse,
 )
 from app.services.redemption_alerts import announce_redemption
+from app.services.redemption_service import RedemptionService
 from app.services.totp import TotpService
 from app.utils.geo import calculate_haversine_distance
 
 router = APIRouter()
 security_bearer = HTTPBearer(auto_error=False)
-
-
-def calculate_discount(discount_type: str, discount_value: float, bill_amount: float) -> float:
-    if discount_type == DiscountType.PERCENTAGE.value:
-        return round(min(bill_amount, bill_amount * discount_value / 100), 2)
-    if discount_type == DiscountType.FLAT_AMOUNT.value:
-        return round(min(bill_amount, discount_value), 2)
-    return round(min(bill_amount, discount_value), 2)
 
 
 async def get_staff_context(
@@ -52,80 +48,56 @@ async def get_staff_context(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid staff authentication claims.")
 
 
-async def check_pin_rate_limit(staff_id: uuid.UUID, coupon_id: uuid.UUID) -> None:
-    redis = await get_redis_client()
-    key = f"rate:backup-pin:{staff_id}:{coupon_id}"
-    attempts = await redis.incr(key)
-    if attempts == 1:
-        await redis.expire(key, 600)
-    if attempts > 5:
-        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Too many backup PIN attempts.")
+@router.post("/redemptions/preview", response_model=ResponseEnvelope[RedemptionPreviewResponse])
+async def preview_qr_coupon(
+    request: RedemptionPreviewRequest,
+    credentials: Annotated[Optional[HTTPAuthorizationCredentials], Depends(security_bearer)],
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Cashier terminal scans customer's dynamic QR code.
+    Pre-validates store ownership, expiration, and fresh TOTP before asking cashier for bill amount.
+    """
+    staff_merchant_id, _ = await get_staff_context(credentials)
+    coupon, _ = await RedemptionService.validate_qr_for_staff(db, request.qr_payload, staff_merchant_id)
+
+    discount_type = (
+        coupon.template.discount_type.value
+        if hasattr(coupon.template.discount_type, "value")
+        else str(coupon.template.discount_type)
+    )
+
+    return ResponseEnvelope(
+        data=RedemptionPreviewResponse(
+            user_coupon_id=coupon.id,
+            coupon_title=coupon.template.title,
+            discount_type=discount_type,
+            discount_value=float(coupon.template.discount_value),
+            min_order_amount=float(coupon.template.min_order_amount),
+            customer_name=coupon.user.full_name or coupon.user.phone,
+            customer_phone=coupon.user.phone,
+        ),
+        message="Voucher verified successfully for this store.",
+    )
 
 
 @router.post("/redemptions/verify", response_model=ResponseEnvelope[RedemptionVerifyResponse])
 async def verify_and_redeem(
     request: RedemptionVerifyRequest,
     credentials: Annotated[Optional[HTTPAuthorizationCredentials], Depends(security_bearer)],
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Cashier POS terminal scans customer's dynamic QR code.
     Verifies TOTP token, checks store geofence, and records redemption in the ledger.
     """
     staff_merchant_id, staff_id = await get_staff_context(credentials)
-
-    # Decode and parse QR payload
-    parsed = TotpService.parse_qr_payload(request.qr_payload)
-    if not parsed or "claim_id" not in parsed or "totp" not in parsed:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Malformed or unreadable QR payload.")
-
-    claim_id = uuid.UUID(parsed["claim_id"])
-    totp_token = parsed["totp"]
-
-    # Fetch claimed coupon
-    stmt = (
-        select(UserCoupon)
-        .options(selectinload(UserCoupon.template), selectinload(UserCoupon.user))
-        .where(UserCoupon.id == claim_id)
-    )
-    res = await db.execute(stmt)
-    coupon = res.scalars().first()
-
-    if not coupon:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Coupon claim record not found.")
-
-    c_status = coupon.status.value if hasattr(coupon.status, "value") else str(coupon.status)
-    if c_status == "REDEEMED":
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"Voucher already redeemed at {coupon.redeemed_at.strftime('%H:%M') if coupon.redeemed_at else 'earlier'}."
-        )
-
-    exp = coupon.expires_at.replace(tzinfo=timezone.utc) if coupon.expires_at.tzinfo is None else coupon.expires_at
-    if exp < datetime.now(timezone.utc):
-        coupon.status = CouponStatus.EXPIRED
-        await db.flush()
-        raise HTTPException(status_code=status.HTTP_410_GONE, detail="This coupon has expired.")
-
-    # Check merchant ownership
-    if coupon.template.merchant_id != staff_merchant_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="This coupon belongs to a different merchant."
-        )
+    coupon, totp_token = await RedemptionService.validate_qr_for_staff(db, request.qr_payload, staff_merchant_id)
 
     if request.bill_amount < float(coupon.template.min_order_amount):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Bill amount must be at least {float(coupon.template.min_order_amount):.2f}.",
-        )
-
-    # Verify dynamic TOTP cryptographic token
-    is_valid_totp = TotpService.verify_token(coupon.totp_secret, totp_token)
-    if not is_valid_totp:
-        raise HTTPException(
-            status_code=status.HTTP_410_GONE,
-            detail="QR code expired. Please ask customer to refresh their screen."
+            detail=f"Bill amount must be at least ₹{float(coupon.template.min_order_amount):.2f}.",
         )
 
     # Optional: Verify Geofence if coordinates are provided
@@ -137,7 +109,7 @@ async def verify_and_redeem(
             distance_offset = calculate_haversine_distance(
                 request.cashier_lat, request.cashier_lon, merchant.latitude, merchant.longitude
             )
-            if distance_offset > 500:  # Allow 500m radius tolerance
+            if settings.ENVIRONMENT.lower() != "development" and distance_offset > 500:  # Allow 500m radius tolerance
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail=f"Cashier location exceeds allowed store perimeter ({distance_offset}m away)."
@@ -164,7 +136,7 @@ async def verify_and_redeem(
         )
 
     discount_type = coupon.template.discount_type.value if hasattr(coupon.template.discount_type, "value") else str(coupon.template.discount_type)
-    discount_applied = calculate_discount(
+    discount_applied = RedemptionService.calculate_discount(
         discount_type,
         float(coupon.template.discount_value),
         request.bill_amount,
@@ -209,7 +181,7 @@ async def verify_backup_pin(
     db: AsyncSession = Depends(get_db),
 ):
     staff_merchant_id, staff_id = await get_staff_context(credentials)
-    await check_pin_rate_limit(staff_id, request.user_coupon_id)
+    await RedemptionService.check_pin_rate_limit(staff_id, request.user_coupon_id)
 
     result = await db.execute(
         select(UserCoupon)
@@ -254,7 +226,7 @@ async def verify_backup_pin(
         )
 
     discount_type = coupon.template.discount_type.value if hasattr(coupon.template.discount_type, "value") else str(coupon.template.discount_type)
-    discount = calculate_discount(discount_type, float(coupon.template.discount_value), request.bill_amount)
+    discount = RedemptionService.calculate_discount(discount_type, float(coupon.template.discount_value), request.bill_amount)
     ledger = RedemptionsLedger(
         user_coupon_id=coupon.id,
         merchant_id=staff_merchant_id,

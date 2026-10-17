@@ -87,3 +87,17 @@ class UserCouponWalletItem(BaseModel):
     is_expired: bool
 
     model_config = {"from_attributes": True}
+
+
+class RedemptionPreviewRequest(BaseModel):
+    qr_payload: str
+
+
+class RedemptionPreviewResponse(BaseModel):
+    user_coupon_id: uuid.UUID
+    coupon_title: str
+    discount_type: str
+    discount_value: float
+    min_order_amount: float
+    customer_name: Optional[str] = None
+    customer_phone: Optional[str] = None

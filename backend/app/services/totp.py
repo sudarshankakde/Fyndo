@@ -61,11 +61,11 @@ class TotpService:
     @staticmethod
     def verify_token(secret: str, token: str) -> bool:
         """
-        Verifies the TOTP token allowing ±1 window (drift tolerance).
-        Since interval is 60s, window=1 allows up to 120s validity.
+        Verifies the TOTP token strictly within its active 60s interval.
+        valid_window=0 ensures expired tokens from past windows are strictly rejected.
         """
         totp = pyotp.TOTP(secret, interval=60)
-        return totp.verify(token, valid_window=1)
+        return totp.verify(token, valid_window=0)
 
     @staticmethod
     def verify_backup_pin(secret: str, pin: str) -> bool:
