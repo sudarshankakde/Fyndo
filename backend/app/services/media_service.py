@@ -21,6 +21,7 @@ from typing import Dict, Optional
 from fastapi import UploadFile
 
 from app.core.config import settings
+from app.services.cloudinary_service import CloudinaryService
 
 logger = logging.getLogger("fyndo.media")
 
@@ -181,6 +182,34 @@ def store_upload(upload: UploadFile, folder: str) -> Dict[str, object]:
         thumb_path = os.path.join(target_dir, thumb_name)
         if generate_video_thumbnail(destination, thumb_path):
             thumbnail_url = f"/uploads/{folder}/{thumb_name}"
+
+    # Production path: Sync to Cloudinary if configured
+    cloudinary_data = CloudinaryService.upload_file(destination, folder, expected_kind)
+    if cloudinary_data:
+        # If Cloudinary upload succeeded, we also try to upload the thumbnail if it exists
+        final_url = cloudinary_data["url"]
+        final_thumb = thumbnail_url
+        public_id = cloudinary_data["public_id"]
+        
+        if thumbnail_url and os.path.exists(os.path.join(upload_root(), thumbnail_url.lstrip("/"))):
+            thumb_cloud = CloudinaryService.upload_file(
+                os.path.join(upload_root(), thumbnail_url.lstrip("/")), 
+                folder, 
+                "image"
+            )
+            if thumb_cloud:
+                final_thumb = thumb_cloud["url"]
+        
+        return {
+            "url": final_url,
+            "thumbnail_url": final_thumb,
+            "cloudinary_public_id": public_id,
+            "filename": unique_name,
+            "size_bytes": size_bytes,
+            "folder": folder,
+            "content_type": upload.content_type or "application/octet-stream",
+            "checksum_sha256": checksum.hexdigest(),
+        }
 
     return {
         "url": f"/uploads/{folder}/{unique_name}",

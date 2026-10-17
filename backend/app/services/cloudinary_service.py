@@ -1,6 +1,7 @@
 import hashlib
 import time
-from typing import Any, Dict
+from typing import Any, Dict, Optional
+import cloudinary.uploader
 import cloudinary.utils
 from app.core.config import settings
 
@@ -58,3 +59,33 @@ class CloudinaryService:
             "folder": f"fyndo/{folder}",
             "upload_url": upload_url
         }
+
+    @staticmethod
+    def upload_file(
+        file_path: str, 
+        folder: str = "reels", 
+        resource_type: str = "video"
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Performs a server-side upload to Cloudinary.
+        Used for fallback or admin-initiated uploads.
+        """
+        if not settings.CLOUDINARY_API_SECRET or not settings.CLOUDINARY_API_KEY:
+            return None
+
+        try:
+            folder, resource_type = validate_upload_target(folder, resource_type)
+            result = cloudinary.uploader.upload(
+                file_path,
+                folder=f"fyndo/{folder}",
+                resource_type=resource_type
+            )
+            return {
+                "url": result.get("secure_url"),
+                "public_id": result.get("public_id"),
+                "duration": result.get("duration"),
+            }
+        except Exception as exc:
+            from app.services.media_service import logger
+            logger.error(f"Cloudinary server-side upload failed: {exc}")
+            return None

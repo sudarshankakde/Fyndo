@@ -55,6 +55,8 @@ class RedemptionHistoryItem(BaseModel):
     discount_applied: float
     created_at: datetime
 
+    model_config = {"from_attributes": True}
+
 
 class MerchantRedemptionItem(BaseModel):
     redemption_id: uuid.UUID
@@ -65,6 +67,8 @@ class MerchantRedemptionItem(BaseModel):
     discount_applied: float
     staff_id: Optional[uuid.UUID] = None
     created_at: datetime
+
+    model_config = {"from_attributes": True}
 
 
 class UserCouponWalletItem(BaseModel):
@@ -81,3 +85,5 @@ class UserCouponWalletItem(BaseModel):
     claimed_at: datetime
     expires_at: datetime
     is_expired: bool
+
+    model_config = {"from_attributes": True}

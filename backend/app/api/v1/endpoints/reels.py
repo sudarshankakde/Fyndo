@@ -170,12 +170,18 @@ async def list_my_reels(
         )
     ).scalars().all()
 
-    items = []
+    # Map to schema and inject merchant metadata
+    reel_list = []
     for reel in reels:
-        payload = ReelManagementOut.model_validate(reel)
-        payload.status = getattr(reel.status, "value", str(reel.status))
-        items.append(payload)
-    return ResponseEnvelope(data=items)
+        out = ReelManagementOut.model_validate(reel)
+        out.status = getattr(reel.status, "value", str(reel.status))
+        if reel.merchant:
+            out.merchant_name = reel.merchant.business_name
+            out.sector = reel.merchant.sector
+            out.city = reel.merchant.city
+        reel_list.append(out)
+
+    return ResponseEnvelope(data=reel_list)
 
 
 @router.get("/reels/{reel_id}", response_model=ResponseEnvelope[ReelOut])

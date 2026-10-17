@@ -55,6 +55,8 @@ class MerchantFeedSummary(BaseModel):
     address: str
     distance_meters: int
 
+    model_config = {"from_attributes": True}
+
 
 class CouponFeedSummary(BaseModel):
     id: uuid.UUID
@@ -63,6 +65,8 @@ class CouponFeedSummary(BaseModel):
     discount_value: float
     min_order_amount: float
     validity_days: int
+
+    model_config = {"from_attributes": True}
 
 
 class ReelOut(BaseModel):
@@ -97,6 +101,8 @@ class ReelCommentOut(BaseModel):
     created_at: datetime
     is_store_reply: bool = False
 
+    model_config = {"from_attributes": True}
+
 
 class ReelManagementOut(BaseModel):
     id: uuid.UUID
@@ -111,6 +117,13 @@ class ReelManagementOut(BaseModel):
     created_at: datetime
     updated_at: datetime
     deleted_at: Optional[datetime] = None
+
+    # Merchant summary for management context
+    merchant_name: Optional[str] = None
+    sector: Optional[str] = None
+    city: Optional[str] = None
+
+    model_config = {"from_attributes": True}
 
 
 class ReelUpdateRequest(BaseModel):
