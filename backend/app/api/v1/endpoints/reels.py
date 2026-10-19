@@ -4,46 +4,32 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.api.v1.endpoints.auth import get_current_user, get_optional_user
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.rate_limit import rate_limit
-from app.models.coupon import CouponTemplate, DiscountType
-from app.models.merchant import Merchant, Sector
-from app.models.reel import AudioType, Reel, ReelStatus
+from app.models.merchant import Merchant
+from app.models.reel import Reel, ReelStatus
 from app.models.user import User
 from app.schemas.common import ResponseEnvelope
 from app.schemas.reel import (
     CouponFeedSummary,
     MerchantFeedSummary,
-    ReelCreateRequest,
     ReelManagementOut,
     ReelOut,
     ReelUpdateRequest,
 )
 from app.services.reel_feed_service import build_feed
+from app.services.reel_lifecycle_service import live_offer_clause
 
 router = APIRouter()
-
-# Hard sector validity ceilings (docs/AGENTS.md section 2)
-SECTOR_VALIDITY_LIMITS = {
-    Sector.FOOD: 5,
-    Sector.FASHION: 15,
-    Sector.FOOTWEAR: 15,
-    Sector.ELECTRONICS: 15,
-    Sector.REAL_ESTATE: 60,
-}
 
 
 async def _merchant_for(db: AsyncSession, user: User) -> Merchant | None:
     result = await db.execute(select(Merchant).where(Merchant.user_id == user.id))
     return result.scalars().first()
-
-
-def _is_approved_kyc(merchant: Merchant) -> bool:
-    kyc = getattr(merchant.kyc_status, "value", str(merchant.kyc_status))
-    return kyc == "APPROVED"
 
 
 @router.get("/reels/feed", response_model=ResponseEnvelope[list[ReelOut]])
@@ -76,78 +62,6 @@ async def get_proximity_feed(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid feed cursor."
         )
     return ResponseEnvelope(data=items, meta={"next_cursor": next_cursor})
-
-
-@router.post("/reels", response_model=ResponseEnvelope[dict])
-async def create_reel(
-    request: ReelCreateRequest,
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """Submits a new reel with an attached coupon for Admin moderation."""
-    merchant = await _merchant_for(db, current_user)
-    if not merchant:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Please register your store profile before publishing showcase reels.",
-        )
-    if not _is_approved_kyc(merchant):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Your merchant KYC must be approved before publishing reels.",
-        )
-
-    thumbnail_url = request.thumbnail_url or settings.DEFAULT_REEL_THUMBNAIL_URL
-    if not thumbnail_url:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="A thumbnail image is required for every reel.",
-        )
-
-    max_days = SECTOR_VALIDITY_LIMITS.get(merchant.sector, 15)
-    validity_days = min(request.coupon.validity_days, max_days)
-
-    try:
-        audio_enum = AudioType(request.audio_type)
-    except ValueError:
-        audio_enum = AudioType.CAMERA_MIC
-    try:
-        disc_enum = DiscountType(request.coupon.discount_type)
-    except ValueError:
-        disc_enum = DiscountType.PERCENTAGE
-
-    reel = Reel(
-        merchant_id=merchant.id,
-        title=request.title,
-        duration_seconds=request.duration_seconds,
-        video_url=request.video_url,
-        thumbnail_url=thumbnail_url,
-        cloudinary_public_id=request.cloudinary_public_id,
-        audio_type=audio_enum,
-        allow_comments=request.allow_comments,
-        status=ReelStatus.PENDING_MODERATION,
-    )
-    db.add(reel)
-    await db.flush()
-
-    coupon = CouponTemplate(
-        merchant_id=merchant.id,
-        reel_id=reel.id,
-        title=request.coupon.title,
-        discount_type=disc_enum,
-        discount_value=request.coupon.discount_value,
-        min_order_amount=request.coupon.min_order_amount,
-        validity_days=validity_days,
-        terms=request.coupon.terms or "Valid for in-store redemption today",
-    )
-    db.add(coupon)
-    await db.flush()
-
-    reel_status = getattr(reel.status, "value", str(reel.status))
-    return ResponseEnvelope(
-        data={"reel_id": str(reel.id), "status": reel_status},
-        message="Reel created and submitted for admin review.",
-    )
 
 
 @router.get("/reels/mine", response_model=ResponseEnvelope[list[ReelManagementOut]])
@@ -192,7 +106,9 @@ async def get_reel(reel_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
                 Reel.id == reel_id,
                 Reel.status == ReelStatus.APPROVED,
                 Reel.deleted_at.is_(None),
+                live_offer_clause(),
             )
+            .options(selectinload(Reel.merchant), selectinload(Reel.coupon_template))
         )
     ).scalars().first()
     if not reel or not reel.merchant:
@@ -209,6 +125,7 @@ async def get_reel(reel_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
             discount_value=float(coupon.discount_value),
             min_order_amount=float(coupon.min_order_amount),
             validity_days=coupon.validity_days,
+            expires_at=coupon.expires_at,
         )
 
     return ResponseEnvelope(

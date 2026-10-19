@@ -18,6 +18,7 @@ from app.models.reel import Reel, ReelStatus, ReelView
 from app.models.reel_engagement import ReelComment, ReelLike
 from app.models.user import User, UserRole
 from app.schemas.reel import ReelCommentOut
+from app.services.reel_lifecycle_service import live_offer_clause
 
 logger = logging.getLogger("fyndo.reel_engagement")
 
@@ -62,6 +63,7 @@ async def _get_live_reel(db: AsyncSession, reel_id: uuid.UUID) -> Optional[Reel]
             Reel.id == reel_id,
             Reel.status == ReelStatus.APPROVED,
             Reel.deleted_at.is_(None),
+            live_offer_clause(),
         )
     )
     return result.scalars().first()

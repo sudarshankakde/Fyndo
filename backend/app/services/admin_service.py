@@ -18,6 +18,7 @@ from app.schemas.admin import (
     AdminStaffUpdateRequest,
     AdminStatsResponse,
 )
+from app.services.reel_lifecycle_service import start_offer_clock
 
 
 class AdminService:
@@ -196,6 +197,7 @@ class AdminService:
             is_active=True
         )
         db.add(coupon)
+        start_offer_clock(reel, coupon)
         await db.flush()
         return reel.id
 

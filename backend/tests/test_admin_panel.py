@@ -193,3 +193,22 @@ async def test_logout_clears_the_session(client: AsyncClient):
     assert out.status_code == 303
     assert out.headers["location"] == "/admin/login"
     assert (await client.get("/admin/")).status_code == 303
+
+
+@pytest.mark.asyncio
+async def test_dashboard_auto_approve_toggle(client: AsyncClient):
+    from app.core.database import async_session_factory
+    from app.services.settings_service import is_auto_approve_enabled
+
+    await _sign_in(client)
+    page = await client.get("/admin/")
+    assert "Auto-approve reels" in page.text
+
+    resp = await client.post("/admin/settings/auto-approve", data={"enabled": "on"})
+    assert resp.status_code == 303
+    async with async_session_factory() as session:
+        assert await is_auto_approve_enabled(session) is True
+
+    await client.post("/admin/settings/auto-approve", data={})
+    async with async_session_factory() as session:
+        assert await is_auto_approve_enabled(session) is False

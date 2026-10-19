@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 from pydantic import BaseModel, Field
 
 
@@ -109,3 +109,14 @@ class AdminStaffUpdateRequest(BaseModel):
     staff_name: str = Field(..., min_length=2, max_length=100)
     phone: str = Field(..., description="+91XXXXXXXXXX")
     pin: str = Field(..., min_length=6, max_length=6)
+
+
+class SystemSettingOut(BaseModel):
+    key: str
+    value: Any
+    description: Optional[str] = None
+    updated_at: Optional[datetime] = None
+
+
+class SystemSettingsUpdateRequest(BaseModel):
+    auto_approve_reels: Optional[bool] = None

@@ -65,6 +65,20 @@ class Reel(Base):
         nullable=False
     )
     deleted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Offer lifecycle: the clock starts when the reel goes live. Once expired the
+    # merchant has until grace_period_until to extend before the reel is removed.
+    expires_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+    grace_period_until: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    is_expired: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    created_by_staff_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("merchant_staff.id", ondelete="SET NULL"),
+        nullable=True
+    )
 
     # Relationships
     merchant = relationship("Merchant", back_populates="reels")

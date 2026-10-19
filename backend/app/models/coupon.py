@@ -45,6 +45,8 @@ class CouponTemplate(Base):
     validity_days: Mapped[int] = mapped_column(Integer, nullable=False)
     terms: Mapped[str] = mapped_column(Text, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # Mirrors the parent reel's offer expiry; claims are refused after it passes.
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),

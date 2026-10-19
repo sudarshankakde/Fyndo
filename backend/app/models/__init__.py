@@ -10,6 +10,8 @@ from app.models.coupon import (
     DiscountType,
     CouponStatus,
 )
+from app.models.merchant_engagement import MerchantCallClick, MerchantFollower, MerchantRating
+from app.models.system_settings import SystemSetting
 from app.models.notification import (
     Notification,
     DeviceToken,
@@ -40,4 +42,8 @@ __all__ = [
     "DeviceToken",
     "NotificationCategory",
     "DevicePlatform",
+    "MerchantFollower",
+    "MerchantCallClick",
+    "MerchantRating",
+    "SystemSetting",
 ]

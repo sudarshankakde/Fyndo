@@ -24,6 +24,7 @@ from app.schemas.admin import (
 )
 from app.schemas.common import ResponseEnvelope
 from app.services.admin_service import AdminService
+from app.services.reel_lifecycle_service import start_offer_clock
 from app.services.moderation_alerts import notify_merchant_decision, notify_reel_decision
 
 router = APIRouter()
@@ -233,9 +234,8 @@ async def decide_reel_moderation(
     db: AsyncSession = Depends(get_db)
 ):
     """Approves or rejects a reel in moderation queue."""
-    stmt = select(Reel).options(selectinload(Reel.merchant)).where(Reel.id == reel_id)
-    res = await db.execute(stmt)
-    reel = res.scalars().first()
+    live = (selectinload(Reel.merchant), selectinload(Reel.coupon_template))
+    reel = (await db.execute(select(Reel).options(*live).where(Reel.id == reel_id))).scalars().first()
     if not reel:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Reel not found.")
 
@@ -243,6 +243,8 @@ async def decide_reel_moderation(
     if decision_norm == "APPROVE":
         reel.status = ReelStatus.APPROVED
         reel.rejection_reason = None
+        if reel.expires_at is None:
+            start_offer_clock(reel, reel.coupon_template)
         message = "Reel approved and pushed to live discovery feed."
     elif decision_norm == "REJECT":
         reel.status = ReelStatus.REJECTED

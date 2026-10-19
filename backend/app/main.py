@@ -1,3 +1,5 @@
+import asyncio
+import contextlib
 import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request, status
@@ -13,6 +15,7 @@ from app.core.logging_config import configure_logging
 from app.core.logging_middleware import RequestLoggingMiddleware
 from app.core.middleware import MaxBodySizeMiddleware, SecurityHeadersMiddleware
 from app.core.redis import close_redis_client, get_redis_client
+from app.services.reel_lifecycle_service import run_periodic_sweep
 import app.models  # Ensure all SQLAlchemy models are registered
 
 configure_logging()
@@ -39,9 +42,19 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Cache initialization notice: {e}")
 
+    sweep_task = None
+    if settings.REEL_LIFECYCLE_SWEEP_SECONDS > 0:
+        sweep_task = asyncio.create_task(
+            run_periodic_sweep(settings.REEL_LIFECYCLE_SWEEP_SECONDS)
+        )
+
     yield
 
     logger.info("Shutting down Fyndo Core API...")
+    if sweep_task:
+        sweep_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await sweep_task
     await close_redis_client()
     await engine.dispose()
 

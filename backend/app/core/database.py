@@ -43,7 +43,46 @@ _PERFORMANCE_INDEXES = (
     "CREATE INDEX IF NOT EXISTS ix_reel_comments_reel_created ON reel_comments (reel_id, created_at)",
     "CREATE INDEX IF NOT EXISTS ix_redemptions_ledger_merchant_created "
     "ON redemptions_ledger (merchant_id, created_at)",
+    "CREATE INDEX IF NOT EXISTS ix_reels_expires_at ON reels (expires_at)",
 )
+
+
+# Columns added after the initial beta schema: table -> column -> (sqlite, postgres) DDL.
+_COMPAT_COLUMNS = {
+    "user_coupons": {
+        "backup_pin_used_at": ("DATETIME", "TIMESTAMPTZ NULL"),
+    },
+    "redemptions_ledger": {
+        "bill_amount": ("NUMERIC(10, 2) NOT NULL DEFAULT 0", "NUMERIC(10, 2) NOT NULL DEFAULT 0"),
+    },
+    "reel_comments": {
+        "parent_comment_id": ("UUID NULL", "UUID NULL"),
+    },
+    "users": {
+        "username": ("VARCHAR(30) NULL", "VARCHAR(30) NULL"),
+        "profile_image_url": ("VARCHAR(500) NULL", "VARCHAR(500) NULL"),
+    },
+    "merchants": {
+        "profile_video_url": ("VARCHAR(500) NULL", "VARCHAR(500) NULL"),
+        "profile_video_thumbnail_url": ("VARCHAR(500) NULL", "VARCHAR(500) NULL"),
+        "call_clicks_count": ("INTEGER NOT NULL DEFAULT 0", "INTEGER NOT NULL DEFAULT 0"),
+    },
+    "merchant_staff": {
+        "can_upload_reels": ("BOOLEAN NOT NULL DEFAULT 0", "BOOLEAN NOT NULL DEFAULT FALSE"),
+    },
+    "reels": {
+        "expires_at": ("DATETIME NULL", "TIMESTAMPTZ NULL"),
+        "grace_period_until": ("DATETIME NULL", "TIMESTAMPTZ NULL"),
+        "is_expired": ("BOOLEAN NOT NULL DEFAULT 0", "BOOLEAN NOT NULL DEFAULT FALSE"),
+        "created_by_staff_id": (
+            "UUID NULL",
+            "UUID NULL REFERENCES merchant_staff(id) ON DELETE SET NULL",
+        ),
+    },
+    "coupon_templates": {
+        "expires_at": ("DATETIME NULL", "TIMESTAMPTZ NULL"),
+    },
+}
 
 
 async def ensure_compatibility_schema() -> None:
@@ -55,51 +94,23 @@ async def ensure_compatibility_schema() -> None:
     async with engine.begin() as conn:
         dialect = conn.dialect.name
         if dialect == "sqlite":
-            tables_and_columns = {
-                "user_coupons": {
-                    "backup_pin_used_at": "DATETIME",
-                },
-                "redemptions_ledger": {
-                    "bill_amount": "NUMERIC(10, 2) NOT NULL DEFAULT 0",
-                },
-                "reel_comments": {
-                    "parent_comment_id": "UUID NULL",
-                },
-                "users": {
-                    "username": "VARCHAR(30) NULL",
-                    "profile_image_url": "VARCHAR(500) NULL",
-                },
-            }
-            for table, columns in tables_and_columns.items():
+            for table, columns in _COMPAT_COLUMNS.items():
                 existing = await conn.run_sync(
                     lambda sync_conn, table_name=table: {
                         column["name"] for column in inspect(sync_conn).get_columns(table_name)
                     }
                 )
-                for column, definition in columns.items():
+                for column, (definition, _) in columns.items():
                     if column not in existing:
                         await conn.execute(
                             text(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
                         )
         elif dialect == "postgresql":
-            await conn.execute(
-                text(
-                    "ALTER TABLE user_coupons ADD COLUMN IF NOT EXISTS "
-                    "backup_pin_used_at TIMESTAMPTZ NULL"
-                )
-            )
-            await conn.execute(
-                text(
-                    "ALTER TABLE redemptions_ledger ADD COLUMN IF NOT EXISTS "
-                    "bill_amount NUMERIC(10, 2) NOT NULL DEFAULT 0"
-                )
-            )
-            await conn.execute(
-                text(
-                    "ALTER TABLE reel_comments ADD COLUMN IF NOT EXISTS "
-                    "parent_comment_id UUID NULL"
-                )
-            )
+            for table, columns in _COMPAT_COLUMNS.items():
+                for column, (_, definition) in columns.items():
+                    await conn.execute(
+                        text(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {definition}")
+                    )
         for statement in _PERFORMANCE_INDEXES:
             await conn.execute(text(statement))
     _compatibility_schema_ready = True

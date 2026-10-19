@@ -29,6 +29,7 @@ from app.models.reel import Reel, ReelStatus
 from app.models.reel_engagement import ReelComment, ReelLike
 from app.models.user import User
 from app.schemas.reel import CouponFeedSummary, MerchantFeedSummary, ReelOut
+from app.services.reel_lifecycle_service import live_offer_clause
 from app.utils.geo import calculate_haversine_distance
 
 logger = logging.getLogger("fyndo.reel_feed")
@@ -99,6 +100,7 @@ def _coupon_summary(reel: Reel) -> Optional[CouponFeedSummary]:
         discount_value=float(template.discount_value),
         min_order_amount=float(template.min_order_amount),
         validity_days=template.validity_days,
+        expires_at=template.expires_at,
     )
 
 
@@ -122,6 +124,7 @@ async def _query_feed(
         .options(selectinload(Reel.merchant), selectinload(Reel.coupon_template))
         .where(Reel.status == ReelStatus.APPROVED)
         .where(Reel.deleted_at.is_(None))
+        .where(live_offer_clause())
         .where(Merchant.latitude.between(lat - lat_delta, lat + lat_delta))
         .where(Merchant.longitude.between(lon - lon_delta, lon + lon_delta))
         .order_by(Reel.created_at.desc())

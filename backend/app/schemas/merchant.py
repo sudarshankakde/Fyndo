@@ -32,6 +32,9 @@ class MerchantOut(BaseModel):
     latitude: float
     longitude: float
     kyc_status: str
+    profile_video_url: Optional[str] = None
+    profile_video_thumbnail_url: Optional[str] = None
+    call_clicks_count: int = 0
 
     model_config = {"from_attributes": True}
 
@@ -47,6 +50,7 @@ class StaffOut(BaseModel):
     staff_name: str
     phone: str
     is_active: bool
+    can_upload_reels: bool = False
 
     model_config = {"from_attributes": True}
 
@@ -85,6 +89,12 @@ class PublicMerchantOut(BaseModel):
     city: str
     latitude: float
     longitude: float
+    profile_video_url: Optional[str] = None
+    profile_video_thumbnail_url: Optional[str] = None
+    followers_count: int = 0
+    is_following: bool = False
+    rating_average: float = 0.0
+    rating_count: int = 0
 
 
 class AdminMerchantKycItem(BaseModel):
