@@ -65,6 +65,7 @@ class CouponFeedSummary(BaseModel):
     discount_value: float
     min_order_amount: float
     validity_days: int
+    expires_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
 
@@ -117,6 +118,10 @@ class ReelManagementOut(BaseModel):
     created_at: datetime
     updated_at: datetime
     deleted_at: Optional[datetime] = None
+    expires_at: Optional[datetime] = None
+    grace_period_until: Optional[datetime] = None
+    is_expired: bool = False
+    created_by_staff_id: Optional[uuid.UUID] = None
 
     # Merchant summary for management context
     merchant_name: Optional[str] = None
@@ -131,3 +136,13 @@ class ReelUpdateRequest(BaseModel):
     video_url: Optional[str] = Field(None, min_length=5)
     thumbnail_url: Optional[str] = Field(None, min_length=5)
     allow_comments: Optional[bool] = None
+
+
+class ReelExtendRequest(BaseModel):
+    additional_days: int = Field(..., ge=1, le=60, description="Days from today; capped by sector")
+
+
+class ReelExtendResponse(BaseModel):
+    reel_id: uuid.UUID
+    expires_at: datetime
+    grace_period_until: datetime

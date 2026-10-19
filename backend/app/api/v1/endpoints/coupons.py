@@ -13,7 +13,9 @@ from app.models.notification import NotificationCategory
 from app.models.user import User
 from app.schemas.common import ResponseEnvelope
 from app.schemas.coupon import CouponClaimResponse, DynamicQrResponse, UserCouponWalletItem
+from app.services.coupon_alerts import announce_coupon_enrolled
 from app.services.notification_service import NotificationService
+from app.services.reel_lifecycle_service import as_aware
 from app.services.totp import TotpService
 
 router = APIRouter()
@@ -95,6 +97,9 @@ async def claim_coupon(
     template = res.scalars().first()
     if not template or not template.is_active:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Coupon offer not found or inactive.")
+    offer_end = as_aware(template.expires_at)
+    if offer_end is not None and offer_end <= datetime.now(timezone.utc):
+        raise HTTPException(status_code=status.HTTP_410_GONE, detail="This offer has ended.")
 
     # Check for active existing claim by this user
     existing_res = await db.execute(
@@ -150,6 +155,7 @@ async def claim_coupon(
         action_type="COUPON",
         action_ref=str(user_coupon.id),
     )
+    await announce_coupon_enrolled(db, template=template, user_coupon=user_coupon, shopper=current_user)
     return ResponseEnvelope(
         data=CouponClaimResponse(
             user_coupon_id=user_coupon.id,

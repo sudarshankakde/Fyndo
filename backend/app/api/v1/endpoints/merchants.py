@@ -3,12 +3,13 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.api.v1.endpoints.auth import get_current_user
+from app.api.v1.endpoints.auth import get_current_user, get_optional_user
 from app.core.database import get_db
 from app.core.security import get_password_hash
 from app.models.merchant import KycStatus, Merchant, MerchantStaff, Sector
 from app.models.user import User, UserRole
 from app.schemas.common import ResponseEnvelope
+from app.services import merchant_engagement_service as engagement
 from app.schemas.merchant import (
     MerchantOnboardRequest,
     MerchantKycResubmissionRequest,
@@ -210,6 +211,7 @@ async def update_staff(
 @router.get("/merchants/{merchant_id}", response_model=ResponseEnvelope[PublicMerchantOut])
 async def get_public_merchant(
     merchant_id: uuid.UUID,
+    current_user: User | None = Depends(get_optional_user),
     db: AsyncSession = Depends(get_db)
 ):
     res = await db.execute(
@@ -222,6 +224,7 @@ async def get_public_merchant(
     if not merchant:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Merchant storefront not found.")
 
+    ratings = await engagement.rating_summary(db, merchant.id)
     return ResponseEnvelope(
         data=PublicMerchantOut(
             id=merchant.id,
@@ -231,5 +234,11 @@ async def get_public_merchant(
             city=merchant.city,
             latitude=merchant.latitude,
             longitude=merchant.longitude,
+            profile_video_url=merchant.profile_video_url,
+            profile_video_thumbnail_url=merchant.profile_video_thumbnail_url,
+            followers_count=await engagement.followers_count(db, merchant.id),
+            is_following=await engagement.is_following(db, merchant.id, current_user),
+            rating_average=ratings["average"],
+            rating_count=ratings["count"],
         )
     )

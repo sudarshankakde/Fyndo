@@ -74,6 +74,8 @@ class Settings(BaseSettings):
     # Rate limiting
     ENABLE_RATE_LIMITING: bool = True
     FEED_RATE_LIMIT_PER_MIN: int = 60
+    # How often expired reel offers are checked; 0 disables the background sweep.
+    REEL_LIFECYCLE_SWEEP_SECONDS: int = 300
     POS_RATE_LIMIT_PER_MIN: int = 30
     MAX_REQUEST_BYTES: int = 80 * 1024 * 1024
 

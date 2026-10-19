@@ -3,6 +3,7 @@ import logging
 from typing import Any, Dict
 
 from fastapi import APIRouter, Depends, Request
+from fastapi.responses import RedirectResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,6 +12,7 @@ from app.admin.helpers import form_fields, get_row, meta_or_404, panel_context
 from app.admin.registry import ALL_MODELS
 from app.admin.templating import templates
 from app.admin.utils import count_rows, query_page, serialize_detail, serialize_row
+from app.core.audit import audit_log
 from app.core.database import get_db
 from app.models import (
     CouponStatus,
@@ -21,6 +23,8 @@ from app.models import (
     ReelStatus,
     UserCoupon,
 )
+from app.models.system_settings import AUTO_APPROVE_REELS
+from app.services.settings_service import is_auto_approve_enabled, set_setting
 
 logger = logging.getLogger("fyndo.admin")
 router = APIRouter()
@@ -94,8 +98,32 @@ async def dashboard(
             stats=stats,
             highlights=await _highlights(db),
             total_records=total_records,
+            auto_approve_reels=await is_auto_approve_enabled(db),
         ),
     )
+
+
+@router.post("/settings/auto-approve")
+async def toggle_auto_approve(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    admin: Dict[str, Any] = Depends(current_admin),
+):
+    """Dashboard switch: publish new merchant reels without manual review."""
+    form = await request.form()
+    enabled = form.get("enabled") == "on"
+    await set_setting(db, AUTO_APPROVE_REELS, enabled)
+    await db.commit()
+    audit_log(
+        "system_settings.update",
+        actor_id=admin.get("sub"),
+        actor_role="SUPER_ADMIN",
+        target_type="system_settings",
+        target_id=AUTO_APPROVE_REELS,
+        value=enabled,
+        source="admin_panel",
+    )
+    return RedirectResponse("/admin/", status_code=303)
 
 
 @router.get("/{model_key}")

@@ -13,6 +13,21 @@
   {% endfor %}
 </div>
 
+<form class="card" method="post" action="/admin/settings/auto-approve">
+  <div class="card-head">
+    <h2>Reel publishing</h2>
+    <span class="muted">{{ 'New reels go live instantly' if auto_approve_reels else 'New reels wait for your review' }}</span>
+  </div>
+  <div class="card-body">
+    <label class="check-row">
+      <input type="checkbox" name="enabled" {% if auto_approve_reels %}checked{% endif %}
+             onchange="this.form.submit()">
+      <span><strong>Auto-approve reels</strong> &mdash; publish merchant reels without manual moderation</span>
+    </label>
+    <noscript><button class="btn btn-primary" type="submit">Save</button></noscript>
+  </div>
+</form>
+
 <div class="card">
   <div class="card-head">
     <h2>Tables</h2>

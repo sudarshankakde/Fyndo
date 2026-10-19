@@ -346,7 +346,8 @@
 
 ### 3.3 Create Reel & Attach Coupon
 - **Endpoint**: `POST /reels`
-- **Auth**: Required (`ROLE_MERCHANT`)
+- **Auth**: Required - store owner (`ROLE_MERCHANT`) **or** cashier (`ROLE_CASHIER`) whose `can_upload_reels` permission is on (otherwise `403`).
+- **Behaviour**: Every reel is created with exactly one coupon. When the admin `auto_approve_reels` setting is on the reel is `APPROVED` immediately and its offer clock starts; otherwise it is `PENDING_MODERATION` and the clock starts on approval. `validity_days` is capped by the sector limit.
 - **Request Body**:
 ```json
 {
@@ -421,6 +422,13 @@
 }
 ```
 > `status` degrades to `degraded` when the database is unreachable; cache outages are reported per-dependency.
+
+### 3.7 Offer Expiry & 24-Hour Grace Window
+- When a reel goes live: `expires_at = now + validity_days`, `grace_period_until = expires_at + 24h`.
+- After `expires_at` the reel disappears from the feed/detail/engagement endpoints and its coupon cannot be claimed (`410`). A background sweep (every `REEL_LIFECYCLE_SWEEP_SECONDS`, default 300) marks it expired and notifies the owner.
+- After `grace_period_until` the reel is soft-deleted and its coupon deactivated.
+- `POST /reels/{reel_id}/extend-validity` - owner only. Body `{"additional_days": 1-60}` (capped by sector). New end = now + days. Allowed any time until the grace window closes, otherwise `409`. Response: `{reel_id, expires_at, grace_period_until}`.
+- `GET /merchants/me/reels/expiring` - owner only. Reels whose offer has ended and that are still inside the grace window.
 
 ---
 
@@ -573,6 +581,11 @@
   - `GET /admin/reels?status=ALL|APPROVED|PENDING_MODERATION|REJECTED`: List all platform video reels.
   - `POST /admin/reels`: Direct publication of an approved reel with attached coupon template.
 
+### 5.6 Platform Settings (Auto-Approve)
+- `GET /admin/settings` - Super Admin. Returns `[{key, value, description, updated_at}]`.
+- `PATCH /admin/settings` - Super Admin. Body `{"auto_approve_reels": true|false}`.
+- The HTML admin panel dashboard (`/admin/`) has the same switch (`POST /admin/settings/auto-approve`).
+
 ---
 
 ## 6. Notification Inbox & Push Endpoints
@@ -649,3 +662,44 @@ inbox and manage their push registration.
 - **Response `200 OK`**: `{ "success": true, "data": { "removed": true } }`
 - **Behaviour**: idempotent — `removed` is `false` when the token was already inactive. Called on sign-out.
 
+---
+
+## 7. Storefront Engagement Endpoints
+
+| Method | Endpoint | Auth | Purpose |
+|---|---|---|---|
+| `PATCH` | `/merchants/me/profile-video` | Owner | Set permanent store video. Body `{profile_video_url, profile_video_thumbnail_url?}` |
+| `GET` | `/merchants/me/insights` | Owner | `{followers_count, call_clicks_total, call_clicks_last_7_days, reel_views_total, rating_average, rating_count}` |
+| `POST` | `/merchants/{id}/track-call` | Optional | Log a "Call store" tap. Optional body `{device_fingerprint}`. Returns `{counted}` (false for repeat taps within 60s) |
+| `POST` | `/merchants/{id}/follow` | Shopper | Toggle follow. Returns `{merchant_id, is_following, followers_count}` |
+| `GET` | `/merchants/following` | Shopper | Stores the caller follows |
+| `POST` | `/merchants/{id}/rate` | Shopper | Create/update rating. Body `{rating: 1-5, review_text?}` |
+| `GET` | `/merchants/{id}/ratings` | Optional | `{average, count, breakdown{"1".."5"}, my_rating, reviews[]}` |
+| `PATCH` | `/merchants/staff/{staff_id}/permissions` | Owner | Body `{can_upload_reels}` |
+
+Store owners cannot follow or rate their own store (`400`). `GET /merchants/{id}` now also returns
+`profile_video_url`, `profile_video_thumbnail_url`, `followers_count`, `is_following`, `rating_average`, `rating_count`.
+
+---
+
+## 8. Real-Time Store Channel (WebSocket)
+
+- **Endpoint**: `WS /ws/merchants/{merchant_id}?token=<access token>`
+- **Auth**: the store owner's token or an active cashier token of that store; anything else is closed with code `1008`.
+- On connect the server sends `{"event": "CONNECTED", "data": {"merchant_id": "..."}}`. Sending `ping` returns `pong`.
+- When a shopper claims one of the store's coupons every open socket receives:
+```json
+{
+  "event": "COUPON_ENROLLED",
+  "data": {
+    "coupon_template_id": "...",
+    "user_coupon_id": "...",
+    "reel_id": "...",
+    "coupon_title": "Flat 20% OFF",
+    "shopper_name": "Sudarshan",
+    "claimed_at": "2026-10-19T18:35:00Z"
+  }
+}
+```
+- The owner also gets an inbox alert (`event_type: coupon_enrolled`).
+- Connections are held in-process; multiple API workers would need a shared broker (e.g. Redis pub/sub).

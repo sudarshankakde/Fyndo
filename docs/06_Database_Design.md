@@ -60,6 +60,9 @@ Business entity associated with a merchant user account.
 | `kyc_doc_url` | `VARCHAR(500)` | `NOT NULL` | Cloudinary secure URL for GST/Gumasta document |
 | `kyc_status` | `VARCHAR(20)` | `NOT NULL DEFAULT 'PENDING'` | Enum: `PENDING`, `APPROVED`, `REJECTED` |
 | `kyc_rejection_reason` | `TEXT` | `NULL` | Admin remarks if rejected |
+| `profile_video_url` | `VARCHAR(500)` | `NULL` | Permanent storefront video (never expires, unlike reels) |
+| `profile_video_thumbnail_url` | `VARCHAR(500)` | `NULL` | Poster image for the storefront video |
+| `call_clicks_count` | `INTEGER` | `NOT NULL DEFAULT 0` | Cached total of "Call store" taps (detail in `merchant_call_clicks`) |
 | `created_at` | `TIMESTAMPTZ` | `NOT NULL DEFAULT NOW()` | Timestamp created |
 | `updated_at` | `TIMESTAMPTZ` | `NOT NULL DEFAULT NOW()` | Timestamp updated |
 
@@ -76,6 +79,7 @@ Store POS cashier and accountant credentials. Strictly 1 staff per merchant in B
 | `phone` | `VARCHAR(15)` | `NOT NULL` | Staff personal phone |
 | `pin_hash` | `VARCHAR(255)` | `NOT NULL` | Bcrypt/Argon2 hash of 6-digit scanner PIN |
 | `is_active` | `BOOLEAN` | `NOT NULL DEFAULT true` | Active toggle |
+| `can_upload_reels` | `BOOLEAN` | `NOT NULL DEFAULT false` | Owner-granted permission to publish reels from the cashier login |
 | `created_at` | `TIMESTAMPTZ` | `NOT NULL DEFAULT NOW()` | Timestamp created |
 | `updated_at` | `TIMESTAMPTZ` | `NOT NULL DEFAULT NOW()` | Timestamp updated |
 
@@ -102,6 +106,10 @@ Short video reels uploaded by verified merchants.
 | `created_at` | `TIMESTAMPTZ` | `NOT NULL DEFAULT NOW()` | Upload timestamp |
 | `updated_at` | `TIMESTAMPTZ` | `NOT NULL DEFAULT NOW()` | Update timestamp |
 | `deleted_at` | `TIMESTAMPTZ` | `NULL` | Soft-delete timestamp |
+| `expires_at` | `TIMESTAMPTZ` | `NULL` | Offer end; set when the reel goes live (`now + validity_days`). Hidden from shoppers after this |
+| `grace_period_until` | `TIMESTAMPTZ` | `NULL` | `expires_at + 24h`; owner may extend until then, after which the reel is soft-deleted |
+| `is_expired` | `BOOLEAN` | `NOT NULL DEFAULT false` | Set by the lifecycle sweep once `expires_at` passes |
+| `created_by_staff_id` | `UUID` | `NULL REFERENCES merchant_staff(id) ON DELETE SET NULL` | Cashier who uploaded the reel (NULL = owner) |
 
 ---
 
@@ -120,6 +128,7 @@ Offer rules and terms attached to an approved reel.
 | `validity_days` | `SMALLINT` | `NOT NULL` | Max days valid from claim (Sector constrained) |
 | `terms` | `TEXT` | `NULL` | Specific conditions & exclusions |
 | `is_active` | `BOOLEAN` | `NOT NULL DEFAULT true` | Availability toggle |
+| `expires_at` | `TIMESTAMPTZ` | `NULL` | Mirrors the parent reel's offer end; claims are refused after it |
 | `created_at` | `TIMESTAMPTZ` | `NOT NULL DEFAULT NOW()` | Timestamp created |
 | `updated_at` | `TIMESTAMPTZ` | `NOT NULL DEFAULT NOW()` | Timestamp updated |
 
@@ -255,6 +264,60 @@ Registered push targets (Expo push tokens, fronting FCM and APNs) belonging to s
 | `updated_at` | `TIMESTAMPTZ` | `NOT NULL DEFAULT NOW()` | Last registration / platform change |
 
 > A token is globally unique, so signing in on a device that was previously linked to another account re-assigns the row to the current user.
+
+---
+
+### 2.14 `merchant_followers`
+Shoppers following a store.
+
+| Column | Type | Constraints | Description |
+|---|---|---|---|
+| `id` | `UUID` | `PRIMARY KEY` | Unique follow identifier |
+| `merchant_id` | `UUID` | `NOT NULL REFERENCES merchants(id) ON DELETE CASCADE` | Followed store (indexed) |
+| `user_id` | `UUID` | `NOT NULL REFERENCES users(id) ON DELETE CASCADE` | Follower (indexed) |
+| `created_at` | `TIMESTAMPTZ` | `NOT NULL DEFAULT NOW()` | Followed at |
+
+> `UNIQUE (merchant_id, user_id)` (`uq_merchant_follower`).
+
+### 2.15 `merchant_call_clicks`
+One row per counted "Call store" tap. Repeat taps by the same user/device within 60s are not counted.
+
+| Column | Type | Constraints | Description |
+|---|---|---|---|
+| `id` | `UUID` | `PRIMARY KEY` | Unique click identifier |
+| `merchant_id` | `UUID` | `NOT NULL REFERENCES merchants(id) ON DELETE CASCADE` | Called store |
+| `user_id` | `UUID` | `NULL REFERENCES users(id) ON DELETE SET NULL` | Signed-in caller, if any |
+| `device_fingerprint` | `VARCHAR(128)` | `NULL` | Anonymous device key for de-duplication |
+| `created_at` | `TIMESTAMPTZ` | `NOT NULL DEFAULT NOW()` | Tap time |
+
+> Index `ix_call_clicks_merchant_created (merchant_id, created_at)`.
+
+### 2.16 `merchant_ratings`
+One 1-5 star rating (optionally with a review) per shopper per store; re-rating updates the row.
+
+| Column | Type | Constraints | Description |
+|---|---|---|---|
+| `id` | `UUID` | `PRIMARY KEY` | Unique rating identifier |
+| `merchant_id` | `UUID` | `NOT NULL REFERENCES merchants(id) ON DELETE CASCADE` | Rated store (indexed) |
+| `user_id` | `UUID` | `NOT NULL REFERENCES users(id) ON DELETE CASCADE` | Rating shopper |
+| `rating` | `SMALLINT` | `NOT NULL CHECK (rating BETWEEN 1 AND 5)` | Star rating |
+| `review_text` | `TEXT` | `NULL` | Optional written review |
+| `created_at` / `updated_at` | `TIMESTAMPTZ` | `NOT NULL DEFAULT NOW()` | Timestamps |
+
+> `UNIQUE (merchant_id, user_id)` (`uq_merchant_user_rating`).
+
+### 2.17 `system_settings`
+Runtime platform switches managed by the Super Admin.
+
+| Column | Type | Constraints | Description |
+|---|---|---|---|
+| `key` | `VARCHAR(50)` | `PRIMARY KEY` | Setting name, e.g. `auto_approve_reels` |
+| `value` | `JSON` | `NOT NULL` | Setting value (`auto_approve_reels`: boolean, default `false`) |
+| `description` | `VARCHAR(255)` | `NULL` | Human-readable purpose |
+| `updated_at` | `TIMESTAMPTZ` | `NOT NULL DEFAULT NOW()` | Last change |
+| `updated_by_user_id` | `UUID` | `NULL REFERENCES users(id) ON DELETE SET NULL` | Admin who changed it (NULL from the HTML panel) |
+
+> Schema rollout: new tables are created by `create_all` at startup; new columns on existing tables are added by `ensure_compatibility_schema()` in `backend/app/core/database.py`.
 
 ---
 
