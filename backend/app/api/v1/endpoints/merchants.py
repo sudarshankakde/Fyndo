@@ -1,5 +1,5 @@
 import uuid
-from typing import List
+from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -7,14 +7,22 @@ from app.api.v1.endpoints.auth import get_current_user, get_optional_user
 from app.core.database import get_db
 from app.core.security import get_password_hash
 from app.models.merchant import KycStatus, Merchant, MerchantStaff, Sector
+import json
 from app.models.user import User, UserRole
 from app.schemas.common import ResponseEnvelope
 from app.services import merchant_engagement_service as engagement
+from app.services.category_assets import (
+    STORE_CATEGORIES_METADATA,
+    normalize_sector,
+    get_default_cover_url,
+    get_default_logo_url,
+)
 from app.schemas.merchant import (
     MerchantOnboardRequest,
     MerchantKycResubmissionRequest,
     MerchantProfileUpdateRequest,
     MerchantOut,
+    CategoryMetaOut,
     PublicMerchantOut,
     StaffCreateRequest,
     StaffOut,
@@ -39,6 +47,11 @@ async def onboard_merchant(
             detail="User has already registered a merchant store."
         )
 
+    from app.services.category_assets import get_default_cover_url, get_default_logo_url
+
+    cover_url = request.cover_url or get_default_cover_url(request.sector)
+    logo_url = request.logo_url or get_default_logo_url(request.sector)
+
     merchant = Merchant(
         user_id=current_user.id,
         business_name=request.business_name,
@@ -49,7 +62,9 @@ async def onboard_merchant(
         longitude=request.longitude,
         gstin=request.gstin,
         kyc_doc_url=request.kyc_doc_url,
-        kyc_status=KycStatus.PENDING
+        kyc_status=KycStatus.PENDING,
+        cover_url=cover_url,
+        logo_url=logo_url,
     )
     db.add(merchant)
 
@@ -79,6 +94,24 @@ async def get_merchant_profile(
     return ResponseEnvelope(data=MerchantOut.model_validate(merchant))
 
 
+@router.get("/merchants/categories", response_model=ResponseEnvelope[List[CategoryMetaOut]])
+async def get_store_categories():
+    """Returns all 20 store primary categories with curated subcategories and icons."""
+    data = []
+    for cat in STORE_CATEGORIES_METADATA:
+        data.append(
+            CategoryMetaOut(
+                id=cat["id"],
+                name=cat["name"],
+                icon=cat.get("icon"),
+                sub_categories=cat.get("sub_categories", []),
+                cover_url=get_default_cover_url(cat["id"]),
+                logo_url=get_default_logo_url(cat["id"]),
+            )
+        )
+    return ResponseEnvelope(data=data)
+
+
 @router.patch("/merchants/profile", response_model=ResponseEnvelope[MerchantOut])
 async def update_merchant_profile(
     request: MerchantProfileUpdateRequest,
@@ -90,8 +123,42 @@ async def update_merchant_profile(
     if not merchant:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Merchant profile not found.")
 
-    for field, value in request.model_dump(exclude_unset=True).items():
-        setattr(merchant, field, value)
+    dump = request.model_dump(exclude_unset=True)
+    if "sector" in dump and dump["sector"]:
+        dump["sector"] = normalize_sector(dump["sector"])
+
+    # Cover photo remove or update
+    if "cover_url" in dump:
+        cov = dump["cover_url"]
+        if cov == "" or cov is None:
+            merchant.cover_url = None
+            merchant.profile_video_thumbnail_url = None
+        else:
+            merchant.cover_url = cov
+            merchant.profile_video_thumbnail_url = cov
+        dump.pop("cover_url", None)
+
+    # Logo photo remove or update
+    if "logo_url" in dump:
+        logo = dump["logo_url"]
+        merchant.logo_url = None if (logo == "" or logo is None) else logo
+        dump.pop("logo_url", None)
+
+    # Sub-categories JSON serialization
+    if "sub_categories" in dump:
+        subs = dump["sub_categories"]
+        if isinstance(subs, list):
+            merchant.sub_categories = json.dumps(subs)
+        elif isinstance(subs, str):
+            merchant.sub_categories = subs
+        else:
+            merchant.sub_categories = None
+        dump.pop("sub_categories", None)
+
+    for field, value in dump.items():
+        if hasattr(merchant, field):
+            setattr(merchant, field, value)
+
     await db.flush()
     await db.refresh(merchant)
     return ResponseEnvelope(data=MerchantOut.model_validate(merchant), message="Store profile updated successfully.")

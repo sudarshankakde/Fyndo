@@ -1,6 +1,7 @@
 import hashlib
 import time
 from typing import Any, Dict, Optional
+import cloudinary
 import cloudinary.uploader
 import cloudinary.utils
 from app.core.config import settings
@@ -8,7 +9,24 @@ from app.core.config import settings
 ALLOWED_UPLOAD_TARGETS = {
     "reels": {"video", "image", "auto"},
     "kyc": {"image", "auto"},
+    "profile": {"image", "auto"},
+    "stores": {"image", "auto"},
+    "covers": {"image", "auto"},
+    "logos": {"image", "auto"},
+    "showcase": {"video", "image", "auto"},
 }
+
+
+def _ensure_cloudinary_configured() -> bool:
+    if settings.CLOUDINARY_API_SECRET and settings.CLOUDINARY_API_KEY and settings.CLOUDINARY_CLOUD_NAME:
+        cloudinary.config(
+            cloud_name=settings.CLOUDINARY_CLOUD_NAME,
+            api_key=settings.CLOUDINARY_API_KEY,
+            api_secret=settings.CLOUDINARY_API_SECRET,
+            secure=True,
+        )
+        return True
+    return False
 
 
 def validate_upload_target(folder: str, resource_type: str) -> tuple[str, str]:
@@ -70,7 +88,7 @@ class CloudinaryService:
         Performs a server-side upload to Cloudinary.
         Used for fallback or admin-initiated uploads.
         """
-        if not settings.CLOUDINARY_API_SECRET or not settings.CLOUDINARY_API_KEY:
+        if not _ensure_cloudinary_configured():
             return None
 
         try:

@@ -8,11 +8,31 @@ from app.core.database import Base
 
 
 class Sector(str, Enum):
+    FASHION_CLOTHING = "FASHION_CLOTHING"
+    GROCERY_SUPERMARKET = "GROCERY_SUPERMARKET"
+    CAFE_COFFEE_SHOPS = "CAFE_COFFEE_SHOPS"
+    ELECTRONICS = "ELECTRONICS"
+    BEAUTY_PERSONAL_CARE = "BEAUTY_PERSONAL_CARE"
+    HOME_LIVING = "HOME_LIVING"
+    SPORTS_FITNESS = "SPORTS_FITNESS"
+    BOOKS_STATIONERY = "BOOKS_STATIONERY"
+    KIDS_TOYS = "KIDS_TOYS"
+    REAL_ESTATE = "REAL_ESTATE"
+    JEWELRY_ACCESSORIES = "JEWELRY_ACCESSORIES"
+    TRAVEL_LUGGAGE = "TRAVEL_LUGGAGE"
+    FAST_FOOD = "FAST_FOOD"
+    RESTAURANTS_DINING = "RESTAURANTS_DINING"
+    SALON_SPA = "SALON_SPA"
+    ENTERTAINMENT = "ENTERTAINMENT"
+    SPORTS_ACTIVITY_CENTERS = "SPORTS_ACTIVITY_CENTERS"
+    PETS_SUPPLIES = "PETS_SUPPLIES"
+    EVENTS_FESTIVALS = "EVENTS_FESTIVALS"
+    OTHER = "OTHER"
+
+    # Backward compatibility aliases
     FOOD = "FOOD"
     FASHION = "FASHION"
     FOOTWEAR = "FOOTWEAR"
-    ELECTRONICS = "ELECTRONICS"
-    REAL_ESTATE = "REAL_ESTATE"
 
 
 class KycStatus(str, Enum):
@@ -53,6 +73,13 @@ class Merchant(Base):
     # Permanent storefront video; unlike reels it never expires.
     profile_video_url: Mapped[str] = mapped_column(String(500), nullable=True)
     profile_video_thumbnail_url: Mapped[str] = mapped_column(String(500), nullable=True)
+    cover_url: Mapped[str] = mapped_column(String(500), nullable=True)
+    logo_url: Mapped[str] = mapped_column(String(500), nullable=True)
+    description: Mapped[str] = mapped_column(Text, nullable=True)
+    phone: Mapped[str] = mapped_column(String(30), nullable=True)
+    website: Mapped[str] = mapped_column(String(200), nullable=True)
+    business_hours: Mapped[str] = mapped_column(String(100), nullable=True)
+    sub_categories: Mapped[str] = mapped_column(Text, nullable=True)
     call_clicks_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

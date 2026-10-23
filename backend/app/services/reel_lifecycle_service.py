@@ -51,7 +51,26 @@ def as_aware(value: Optional[datetime]) -> Optional[datetime]:
 
 
 def max_validity_days(sector) -> int:
-    key = Sector(getattr(sector, "value", sector)) if sector else None
+    if not sector:
+        return 15
+    raw = getattr(sector, "value", str(sector)).strip().upper()
+    if raw in {"FOOD", "FASHION", "FOOTWEAR", "ELECTRONICS", "REAL_ESTATE"}:
+        key = Sector(raw)
+    elif any(k in raw for k in ("FOOD", "CAFE", "DINING", "BAKERY", "COFFEE", "RESTAURANT")):
+        key = Sector.FOOD
+    elif any(k in raw for k in ("CLOTH", "FASHION", "APPAREL", "WEAR")):
+        key = Sector.FASHION
+    elif any(k in raw for k in ("SHOE", "FOOT")):
+        key = Sector.FOOTWEAR
+    elif any(k in raw for k in ("ELEC", "PHONE", "TECH")):
+        key = Sector.ELECTRONICS
+    elif any(k in raw for k in ("REAL", "ESTATE")):
+        key = Sector.REAL_ESTATE
+    else:
+        try:
+            key = Sector(raw)
+        except ValueError:
+            key = Sector.FOOD
     return SECTOR_VALIDITY_LIMITS.get(key, 15)
 
 

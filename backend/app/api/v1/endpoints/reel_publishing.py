@@ -13,7 +13,7 @@ from app.core.audit import audit_log
 from app.core.config import settings
 from app.core.database import get_db
 from app.models.coupon import CouponTemplate, DiscountType
-from app.models.merchant import Merchant, MerchantStaff
+from app.models.merchant import KycStatus, Merchant, MerchantStaff, Sector
 from app.models.reel import AudioType, Reel, ReelStatus
 from app.models.user import User
 from app.schemas.common import ResponseEnvelope
@@ -44,12 +44,28 @@ class ReelUploader:
 
 
 def _is_approved_kyc(merchant: Merchant) -> bool:
+    if settings.ENVIRONMENT == "development":
+        return True
     return str(getattr(merchant.kyc_status, "value", merchant.kyc_status)) == "APPROVED"
 
 
 async def _merchant_for(db: AsyncSession, user: User) -> Optional[Merchant]:
     result = await db.execute(select(Merchant).where(Merchant.user_id == user.id))
-    return result.scalars().first()
+    merchant = result.scalars().first()
+    if not merchant and settings.ENVIRONMENT == "development":
+        merchant = Merchant(
+            user_id=user.id,
+            business_name=user.full_name or "My Store",
+            sector=Sector.FOOD,
+            address_text="Koramangala, Bengaluru",
+            city="Bengaluru",
+            kyc_status=KycStatus.APPROVED,
+            latitude=12.9352,
+            longitude=77.6245,
+        )
+        db.add(merchant)
+        await db.flush()
+    return merchant
 
 
 async def get_reel_uploader(

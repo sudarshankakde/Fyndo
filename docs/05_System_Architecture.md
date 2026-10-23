@@ -81,6 +81,18 @@ graph TD
     (defeating extension spoofing), and derives an optional ffmpeg poster frame.
   - All blocking work (disk I/O, SHA-256 hashing, ffmpeg) runs in a worker thread via
     `run_in_threadpool`, so large uploads never block the event loop.
+  - Clients can opt out of CDN sync via the `sync_cdn=false` form field — used by the server-side
+    reel editor to treat the raw clip as a scratch asset that is replaced before publication.
+- **Server-Side Reel Editor** (`POST /media/reels/process`):
+  - Merchants trim, crop (9:16 with zoom & pan), choose a cover frame, mute, and apply a colour
+    "look" in the browser; the final render runs on our own machine via `ffmpeg` / `ffprobe`
+    inside `app/services/reel_processing_service.py` and writes a new MP4 + WebP cover under
+    `uploads/reels/`.
+  - The pipeline is intentionally storage-provider agnostic (reads/writes local paths, returns
+    `/uploads/reels/<file>` URLs), so swapping the underlying storage backend (Cloudinary today,
+    S3/R2/anything tomorrow) requires no change to the editor contract.
+  - Edit specs are validated server-side (duration 15–60s, crop inside the frame, cover inside
+    the trim window) and executions are rate-limited (`media_reel_process`, 20/min/user).
 
 ### 2.3 Anti-Fraud & Dynamic TOTP Engine
 - **Algorithm**: RFC 6238 Time-Based One-Time Password (TOTP) customized for 60-second time steps.

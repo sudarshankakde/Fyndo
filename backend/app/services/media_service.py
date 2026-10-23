@@ -145,7 +145,7 @@ def generate_video_thumbnail(video_path: str, output_path: str) -> bool:
         return False
 
 
-def store_upload(upload: UploadFile, folder: str) -> Dict[str, object]:
+def store_upload(upload: UploadFile, folder: str, sync_cdn: bool = True) -> Dict[str, object]:
     """Validates and persists an upload. Returns a metadata dict."""
     if not upload.filename:
         raise MediaValidationError("No filename provided in upload.")
@@ -171,6 +171,25 @@ def store_upload(upload: UploadFile, folder: str) -> Dict[str, object]:
             "The file content does not match its extension. Upload the original video or image."
         )
 
+    # Automatic WebP conversion for all uploaded images before storing to bucket
+    if expected_kind == "image" and ext != ".webp":
+        from app.services.category_assets import convert_to_webp
+        try:
+            with open(destination, "rb") as handle:
+                raw_img = handle.read()
+            webp_data = convert_to_webp(raw_img, quality=85)
+            webp_name = f"{os.path.splitext(unique_name)[0]}.webp"
+            webp_dest = os.path.join(target_dir, webp_name)
+            with open(webp_dest, "wb") as handle:
+                handle.write(webp_data)
+            os.remove(destination)
+            destination = webp_dest
+            unique_name = webp_name
+            size_bytes = len(webp_data)
+            ext = ".webp"
+        except Exception as exc:
+            logger.warning(f"WebP conversion notice: {exc}")
+
     checksum = hashlib.sha256()
     with open(destination, "rb") as handle:
         for block in iter(lambda: handle.read(1024 * 1024), b""):
@@ -183,8 +202,12 @@ def store_upload(upload: UploadFile, folder: str) -> Dict[str, object]:
         if generate_video_thumbnail(destination, thumb_path):
             thumbnail_url = f"/uploads/{folder}/{thumb_name}"
 
-    # Production path: Sync to Cloudinary if configured
-    cloudinary_data = CloudinaryService.upload_file(destination, folder, expected_kind)
+    # Production path: Sync to Cloudinary if configured. The reel editor flow
+    # opts out (sync_cdn=False) because the raw clip is a scratch asset that
+    # the server-side editor replaces before it is ever shown to viewers.
+    cloudinary_data = (
+        CloudinaryService.upload_file(destination, folder, expected_kind) if sync_cdn else None
+    )
     if cloudinary_data:
         # If Cloudinary upload succeeded, we also try to upload the thumbnail if it exists
         final_url = cloudinary_data["url"]

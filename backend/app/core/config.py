@@ -70,6 +70,12 @@ class Settings(BaseSettings):
     MEDIA_MAX_IMAGE_MB: int = 8
     MEDIA_CHUNK_BYTES: int = 1024 * 1024
     DEFAULT_REEL_THUMBNAIL_URL: Optional[str] = None
+    REEL_MIN_SECONDS: int = 15
+    REEL_MAX_SECONDS: int = 60
+    REEL_OUTPUT_WIDTH: int = 1080
+    REEL_OUTPUT_HEIGHT: int = 1920
+    REEL_PROCESSING_TIMEOUT_SECONDS: int = 180
+    REEL_ENCODE_THREADS: int = 2
 
     # Rate limiting
     ENABLE_RATE_LIMITING: bool = True

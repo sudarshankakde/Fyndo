@@ -17,9 +17,15 @@ from app.core.rate_limit import rate_limit
 from app.core.config import settings
 from app.models.user import User
 from app.schemas.common import ResponseEnvelope
-from app.schemas.media import SignUploadRequest, SignUploadResponse
+from app.schemas.media import (
+    ReelEditRequest,
+    ReelProcessResponse,
+    SignUploadRequest,
+    SignUploadResponse,
+)
 from app.services.cloudinary_service import CloudinaryService, validate_upload_target
 from app.services.media_service import MediaValidationError, store_upload
+from app.services.reel_processing_service import process_reel
 
 router = APIRouter()
 
@@ -46,12 +52,36 @@ async def get_upload_signature(
 
 @router.post("/media/upload", response_model=ResponseEnvelope[dict])
 async def upload_media_file(
-    file: UploadFile = File(...),
+    file: UploadFile | str = File(...),
     folder: str = Form("reels"),
+    sync_cdn: bool = Form(True),
     current_user: User = Depends(get_current_user),
     _: None = Depends(rate_limit("media_upload", 30)),
 ):
     """Streams a reel/KYC file to storage with validation and thumbnail export."""
+    if isinstance(file, str):
+        if file.startswith("http://") or file.startswith("https://"):
+            return ResponseEnvelope(data={"url": file, "thumbnail_url": file}, message="URL accepted.")
+        if file.startswith("/uploads") or file.startswith("uploads/"):
+            return ResponseEnvelope(data={"url": file, "thumbnail_url": file}, message="Existing media accepted.")
+        if file.startswith("data:"):
+            import base64
+            import io
+            header, encoded = file.split(",", 1)
+            content_type = header.split(";")[0].replace("data:", "")
+            ext = content_type.split("/")[-1] if "/" in content_type else "jpg"
+            data_bytes = base64.b64decode(encoded)
+            file = UploadFile(
+                file=io.BytesIO(data_bytes),
+                filename=f"upload.{ext}",
+                headers={"content-type": content_type}
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid media upload payload: string received instead of binary file."
+            )
+
     kind = "image" if (file.content_type or "").startswith("image/") else "video"
     try:
         folder, _ = validate_upload_target(folder, kind)
@@ -61,11 +91,27 @@ async def upload_media_file(
     try:
         # Disk writes and the ffmpeg poster extraction are blocking, so they run
         # in a worker thread to keep the event loop free for other requests.
-        result = await run_in_threadpool(store_upload, file, folder)
+        result = await run_in_threadpool(store_upload, file, folder, sync_cdn)
     except MediaValidationError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message)
 
     return ResponseEnvelope(data=result, message="File uploaded successfully.")
+
+
+@router.post("/media/reels/process", response_model=ResponseEnvelope[ReelProcessResponse])
+async def process_merchant_reel(
+    request: ReelEditRequest,
+    current_user: User = Depends(get_current_user),
+    _: None = Depends(rate_limit("media_reel_process", 20)),
+):
+    """Applies trim / crop / cover / mute / look edits to a merchant's reel."""
+    try:
+        result = await run_in_threadpool(process_reel, request)
+    except MediaValidationError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message)
+    return ResponseEnvelope(
+        data=ReelProcessResponse(**result), message="Your video is ready.",
+    )
 
 
 @router.get("/media/config", response_model=ResponseEnvelope[dict])

@@ -127,6 +127,7 @@ class ReelManagementOut(BaseModel):
     merchant_name: Optional[str] = None
     sector: Optional[str] = None
     city: Optional[str] = None
+    coupon: Optional[CouponFeedSummary] = None
 
     model_config = {"from_attributes": True}
 

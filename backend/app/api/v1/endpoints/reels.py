@@ -10,7 +10,7 @@ from app.api.v1.endpoints.auth import get_current_user, get_optional_user
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.rate_limit import rate_limit
-from app.models.merchant import Merchant
+from app.models.merchant import Merchant, MerchantStaff
 from app.models.reel import Reel, ReelStatus
 from app.models.user import User
 from app.schemas.common import ResponseEnvelope
@@ -29,7 +29,13 @@ router = APIRouter()
 
 async def _merchant_for(db: AsyncSession, user: User) -> Merchant | None:
     result = await db.execute(select(Merchant).where(Merchant.user_id == user.id))
-    return result.scalars().first()
+    merchant = result.scalars().first()
+    if not merchant:
+        staff_res = await db.execute(select(MerchantStaff).where(MerchantStaff.user_id == user.id))
+        staff = staff_res.scalars().first()
+        if staff:
+            merchant = await db.get(Merchant, staff.merchant_id)
+    return merchant
 
 
 @router.get("/reels/feed", response_model=ResponseEnvelope[list[ReelOut]])
@@ -79,20 +85,32 @@ async def list_my_reels(
         await db.execute(
             select(Reel)
             .where(Reel.merchant_id == merchant.id)
+            .options(selectinload(Reel.merchant), selectinload(Reel.coupon_template))
             .order_by(Reel.created_at.desc())
             .limit(200)
         )
     ).scalars().all()
 
-    # Map to schema and inject merchant metadata
+    # Map to schema and inject merchant metadata & attached coupon
     reel_list = []
     for reel in reels:
         out = ReelManagementOut.model_validate(reel)
         out.status = getattr(reel.status, "value", str(reel.status))
         if reel.merchant:
             out.merchant_name = reel.merchant.business_name
-            out.sector = reel.merchant.sector
+            out.sector = getattr(reel.merchant.sector, "value", str(reel.merchant.sector))
             out.city = reel.merchant.city
+        coupon = reel.coupon_template
+        if coupon and coupon.is_active:
+            out.coupon = CouponFeedSummary(
+                id=coupon.id,
+                title=coupon.title,
+                discount_type=getattr(coupon.discount_type, "value", str(coupon.discount_type)),
+                discount_value=float(coupon.discount_value),
+                min_order_amount=float(coupon.min_order_amount),
+                validity_days=coupon.validity_days,
+                expires_at=coupon.expires_at,
+            )
         reel_list.append(out)
 
     return ResponseEnvelope(data=reel_list)

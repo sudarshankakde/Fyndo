@@ -65,7 +65,14 @@ _COMPAT_COLUMNS = {
     "merchants": {
         "profile_video_url": ("VARCHAR(500) NULL", "VARCHAR(500) NULL"),
         "profile_video_thumbnail_url": ("VARCHAR(500) NULL", "VARCHAR(500) NULL"),
+        "cover_url": ("VARCHAR(500) NULL", "VARCHAR(500) NULL"),
+        "logo_url": ("VARCHAR(500) NULL", "VARCHAR(500) NULL"),
+        "description": ("TEXT NULL", "TEXT NULL"),
+        "phone": ("VARCHAR(30) NULL", "VARCHAR(30) NULL"),
+        "website": ("VARCHAR(200) NULL", "VARCHAR(200) NULL"),
+        "business_hours": ("VARCHAR(100) NULL", "VARCHAR(100) NULL"),
         "call_clicks_count": ("INTEGER NOT NULL DEFAULT 0", "INTEGER NOT NULL DEFAULT 0"),
+        "sub_categories": ("TEXT NULL", "TEXT NULL"),
     },
     "merchant_staff": {
         "can_upload_reels": ("BOOLEAN NOT NULL DEFAULT 0", "BOOLEAN NOT NULL DEFAULT FALSE"),

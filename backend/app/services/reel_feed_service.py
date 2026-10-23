@@ -147,6 +147,31 @@ async def _query_feed(
         if distance_m <= radius_meters:
             scored.append((distance_m, str(reel.id), reel, merchant))
 
+    if not scored:
+        # Fallback: return newest live approved reels if device GPS is outside merchant radius
+        fallback_stmt = (
+            select(Reel)
+            .join(Merchant, Reel.merchant_id == Merchant.id)
+            .options(selectinload(Reel.merchant), selectinload(Reel.coupon_template))
+            .where(Reel.status == ReelStatus.APPROVED)
+            .where(Reel.deleted_at.is_(None))
+            .where(live_offer_clause())
+            .order_by(Reel.created_at.desc())
+            .limit(limit)
+        )
+        if sector:
+            fallback_stmt = fallback_stmt.where(Merchant.sector == sector.strip().upper())
+        fallback_reels = (await db.execute(fallback_stmt)).scalars().all()
+        for f_reel in fallback_reels:
+            if not f_reel.merchant:
+                continue
+            dist = (
+                calculate_haversine_distance(lat, lon, f_reel.merchant.latitude, f_reel.merchant.longitude)
+                if (f_reel.merchant.latitude and f_reel.merchant.longitude)
+                else 1000
+            )
+            scored.append((dist, str(f_reel.id), f_reel, f_reel.merchant))
+
     scored.sort(key=lambda row: (row[0], row[1]))
 
     start_index = 0
