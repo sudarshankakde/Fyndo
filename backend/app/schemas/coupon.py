@@ -37,7 +37,7 @@ class RedemptionVerifyResponse(BaseModel):
 
 class PinRedemptionRequest(BaseModel):
     user_coupon_id: uuid.UUID
-    backup_pin: str = Field(..., min_length=4, max_length=4)
+    backup_pin: str = Field(..., min_length=4, max_length=6)
     bill_amount: float = Field(..., gt=0)
     cashier_lat: Optional[float] = None
     cashier_lon: Optional[float] = None

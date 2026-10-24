@@ -1,6 +1,8 @@
+import time
 import uuid
 from datetime import datetime, timezone
 from typing import Annotated, Optional, Tuple
+import pyotp
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import func, select, update
@@ -202,7 +204,17 @@ async def verify_backup_pin(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Backup PIN has already been used.")
     if request.bill_amount < float(coupon.template.min_order_amount):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Bill amount is below the coupon minimum.")
-    if not TotpService.verify_backup_pin(coupon.totp_secret, request.backup_pin):
+    pin_valid = False
+    if len(request.backup_pin) == 6 and request.backup_pin.isdigit():
+        totp_calc = pyotp.TOTP(coupon.totp_secret, interval=60)
+        for offset in (-1, 0, 1):
+            if totp_calc.at(int(time.time()) + offset * 60) == request.backup_pin:
+                pin_valid = True
+                break
+    else:
+        pin_valid = TotpService.verify_backup_pin(coupon.totp_secret, request.backup_pin)
+
+    if not pin_valid:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired backup PIN.")
 
     # Atomic single-winner guard (see /redemptions/verify) — the backup PIN may
