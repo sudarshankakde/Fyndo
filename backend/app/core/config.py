@@ -31,6 +31,10 @@ class Settings(BaseSettings):
 
     # PostgreSQL Database URL (Asyncpg)
     DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/fyndo_db"
+    DB_POOL_SIZE: int = 20
+    DB_MAX_OVERFLOW: int = 30
+    DB_POOL_TIMEOUT: int = 20
+    DB_POOL_RECYCLE_SECONDS: int = 1800
 
     # Redis Connection
     REDIS_URL: str = "redis://localhost:6379"

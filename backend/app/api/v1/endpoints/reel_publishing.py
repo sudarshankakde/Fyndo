@@ -23,6 +23,7 @@ from app.schemas.reel import (
     ReelExtendResponse,
     ReelManagementOut,
 )
+from app.services.cloudinary_service import CloudinaryService
 from app.services.reel_lifecycle_service import (
     OfferExtensionError,
     extend_offer,
@@ -130,11 +131,17 @@ async def create_reel(
         disc_enum = DiscountType.PERCENTAGE
 
     auto_approve = await is_auto_approve_enabled(db)
+    video_url = CloudinaryService.get_optimized_video_url(request.video_url) or request.video_url
+    video_hls_url = CloudinaryService.get_hls_url(
+        public_id=request.cloudinary_public_id,
+        video_url=request.video_url,
+    )
     reel = Reel(
         merchant_id=merchant.id,
         title=request.title,
         duration_seconds=request.duration_seconds,
-        video_url=request.video_url,
+        video_url=video_url,
+        video_hls_url=video_hls_url,
         thumbnail_url=thumbnail_url,
         cloudinary_public_id=request.cloudinary_public_id,
         audio_type=audio_enum,

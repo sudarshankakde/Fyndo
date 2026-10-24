@@ -21,6 +21,7 @@ from app.schemas.reel import (
     ReelOut,
     ReelUpdateRequest,
 )
+from app.services.cloudinary_service import CloudinaryService
 from app.services.reel_feed_service import build_feed
 from app.services.reel_lifecycle_service import live_offer_clause
 
@@ -146,11 +147,16 @@ async def get_reel(reel_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
             expires_at=coupon.expires_at,
         )
 
+    v_url = CloudinaryService.get_optimized_video_url(reel.video_url) or reel.video_url
+    hls_url = getattr(reel, "video_hls_url", None) or CloudinaryService.get_hls_url(
+        public_id=getattr(reel, "cloudinary_public_id", None), video_url=reel.video_url
+    )
     return ResponseEnvelope(
         data=ReelOut(
             id=reel.id,
             title=reel.title,
-            video_url=reel.video_url,
+            video_url=v_url,
+            video_hls_url=hls_url,
             thumbnail_url=reel.thumbnail_url,
             duration_seconds=reel.duration_seconds,
             views_count=reel.views_count,

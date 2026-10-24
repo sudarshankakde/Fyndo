@@ -19,6 +19,9 @@ def _identity(request: Request) -> str:
     auth = request.headers.get("authorization")
     if auth:
         return auth
+    device_id = request.headers.get("x-device-id") or request.headers.get("x-client-id")
+    if device_id:
+        return f"dev:{device_id.strip()}"
     forwarded = request.headers.get("x-forwarded-for")
     if forwarded:
         return forwarded.split(",")[0].strip()

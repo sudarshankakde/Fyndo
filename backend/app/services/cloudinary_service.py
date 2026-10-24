@@ -107,3 +107,41 @@ class CloudinaryService:
             from app.services.media_service import logger
             logger.error(f"Cloudinary server-side upload failed: {exc}")
             return None
+
+    @staticmethod
+    def get_optimized_video_url(url: Optional[str]) -> Optional[str]:
+        """
+        Injects Cloudinary video delivery optimizations (f_auto,q_auto) if URL is on Cloudinary
+        and not already transformed.
+        """
+        if not url or "res.cloudinary.com" not in url or "/video/upload/" not in url:
+            return url
+        if "f_auto" in url or "q_auto" in url or "sp_auto" in url:
+            return url
+        return url.replace("/video/upload/", "/video/upload/f_auto,q_auto/")
+
+    @staticmethod
+    def get_hls_url(
+        public_id: Optional[str] = None,
+        video_url: Optional[str] = None,
+        cloud_name: Optional[str] = None,
+    ) -> Optional[str]:
+        """
+        Generates an adaptive HLS streaming URL (.m3u8) using Cloudinary streaming profile sp_auto.
+        Can derive from public_id or from a standard Cloudinary video upload URL.
+        """
+        cloud = cloud_name or settings.CLOUDINARY_CLOUD_NAME or "fyndo-cloud"
+        if public_id:
+            pid = public_id.rsplit(".", 1)[0] if "." in public_id else public_id
+            return f"https://res.cloudinary.com/{cloud}/video/upload/sp_auto/{pid}.m3u8"
+
+        if video_url and "res.cloudinary.com" in video_url and "/video/upload/" in video_url:
+            parts = video_url.split("/video/upload/")
+            base = parts[0]
+            rest = parts[1]
+            if "," in rest.split("/")[0] or rest.startswith("f_") or rest.startswith("q_") or rest.startswith("sp_"):
+                rest = "/".join(rest.split("/")[1:])
+            rest_without_ext = rest.rsplit(".", 1)[0] if "." in rest else rest
+            return f"{base}/video/upload/sp_auto/{rest_without_ext}.m3u8"
+
+        return None

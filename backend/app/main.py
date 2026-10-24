@@ -6,6 +6,7 @@ from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from starlette.middleware.gzip import GZipMiddleware
 from app.api.v1.api import api_router
 from app.admin import admin_router
 from app.admin.deps import RedirectToLogin, redirect_to_login_handler
@@ -75,6 +76,7 @@ app = FastAPI(
 # emitted by MaxBodySizeMiddleware); CORS sits just inside it so every
 # response — including errors — is decorated with the CORS headers.
 app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.add_middleware(MaxBodySizeMiddleware, max_bytes=settings.MAX_REQUEST_BYTES)
 app.add_middleware(
     CORSMiddleware,
@@ -128,13 +130,25 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     )
 
 
-# Mount static uploads directory for direct reel video streaming & thumbnails
+# Mount static uploads directory for direct reel video streaming & thumbnails with CDN caching
 import os
 from fastapi.staticfiles import StaticFiles
 
+
+class CachedStaticFiles(StaticFiles):
+    """Adds Cache-Control and CORS headers to media responses for edge CDN offloading."""
+
+    async def get_response(self, path: str, scope):
+        response = await super().get_response(path, scope)
+        if response.status_code in {200, 206}:
+            response.headers["Cache-Control"] = "public, max-age=86400, stale-while-revalidate=3600"
+            response.headers["Access-Control-Allow-Origin"] = "*"
+        return response
+
+
 UPLOAD_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../uploads"))
 os.makedirs(UPLOAD_DIR, exist_ok=True)
-app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
+app.mount("/uploads", CachedStaticFiles(directory=UPLOAD_DIR), name="uploads")
 
 # Register API Router
 app.include_router(api_router, prefix=settings.API_V1_STR)

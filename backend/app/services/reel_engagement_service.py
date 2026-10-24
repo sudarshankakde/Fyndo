@@ -11,9 +11,11 @@ from datetime import datetime, timezone
 from typing import List, Optional, Tuple
 
 from sqlalchemy import delete, func, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.privacy import mask_phone
+from app.core.redis import get_redis_client
 from app.models.reel import Reel, ReelStatus, ReelView
 from app.models.reel_engagement import ReelComment, ReelLike
 from app.models.user import User, UserRole
@@ -76,29 +78,42 @@ async def record_view(
     current_user: Optional[User],
     viewer_key: Optional[str],
 ) -> Tuple[int, bool]:
-    """Records a unique daily view. Returns (views_count, counted)."""
+    """Records a unique daily view using fast Redis dedup + atomic SQL update."""
     reel = await _get_live_reel(db, reel_id)
     if not reel:
         raise ReelNotFoundError()
 
-    day_start = datetime.combine(
-        datetime.now(timezone.utc).date(), datetime.min.time(), tzinfo=timezone.utc
-    )
-    dedup = select(ReelView.id).where(
-        ReelView.reel_id == reel_id, ReelView.created_at >= day_start
-    )
-    if current_user:
-        dedup = dedup.where(ReelView.user_id == current_user.id)
-    elif viewer_key:
-        dedup = dedup.where(ReelView.viewer_key == viewer_key)
-    else:
-        dedup = None
+    user_or_key = str(current_user.id) if current_user else (viewer_key or "anon")
+    today_str = datetime.now(timezone.utc).strftime("%Y%m%d")
+    redis_dedup_key = f"view:dedup:{reel_id}:{today_str}:{user_or_key}"
 
-    if dedup is not None:
-        already_seen = (await db.execute(dedup.limit(1))).scalars().first()
-        if already_seen:
+    # 1. Fast path: Redis deduplication (sub-millisecond, bypasses DB completely for re-views)
+    try:
+        redis = await get_redis_client()
+        is_first_today = await redis.set(redis_dedup_key, "1", ex=86400, nx=True)
+        if not is_first_today:
             return int(reel.views_count), False
+    except Exception as exc:
+        logger.debug(f"Redis view dedup fallback to DB: {exc}")
+        day_start = datetime.combine(
+            datetime.now(timezone.utc).date(), datetime.min.time(), tzinfo=timezone.utc
+        )
+        dedup = select(ReelView.id).where(
+            ReelView.reel_id == reel_id, ReelView.created_at >= day_start
+        )
+        if current_user:
+            dedup = dedup.where(ReelView.user_id == current_user.id)
+        elif viewer_key:
+            dedup = dedup.where(ReelView.viewer_key == viewer_key)
+        else:
+            dedup = None
 
+        if dedup is not None:
+            already_seen = (await db.execute(dedup.limit(1))).scalars().first()
+            if already_seen:
+                return int(reel.views_count), False
+
+    # 2. Record individual view ledger
     db.add(
         ReelView(
             reel_id=reel_id,
@@ -106,16 +121,19 @@ async def record_view(
             viewer_key=viewer_key,
         )
     )
-    await db.execute(
+
+    # 3. Atomic counter increment with RETURNING (eliminates follow-up SELECT query)
+    updated_res = await db.execute(
         update(Reel)
         .where(Reel.id == reel_id)
         .values(views_count=Reel.views_count + 1)
+        .returning(Reel.views_count)
         .execution_options(synchronize_session=False)
     )
     await db.flush()
-    views_count = (
-        await db.execute(select(Reel.views_count).where(Reel.id == reel_id))
-    ).scalar_one()
+    views_count = updated_res.scalar_one_or_none()
+    if views_count is None:
+        views_count = int(reel.views_count) + 1
     return int(views_count), True
 
 
@@ -132,13 +150,18 @@ async def toggle_like(db: AsyncSession, *, reel_id: uuid.UUID, user: User) -> Tu
         )
     ).scalars().first()
 
-    if existing:
-        await db.execute(delete(ReelLike).where(ReelLike.id == existing.id))
-        liked = False
-    else:
-        db.add(ReelLike(reel_id=reel_id, user_id=user.id))
+    try:
+        async with db.begin_nested():
+            if existing:
+                await db.execute(delete(ReelLike).where(ReelLike.id == existing.id))
+                liked = False
+            else:
+                db.add(ReelLike(reel_id=reel_id, user_id=user.id))
+                liked = True
+            await db.flush()
+    except IntegrityError:
+        # Race condition: concurrent double-tap from same user handled gracefully
         liked = True
-    await db.flush()
 
     likes_count = (
         await db.execute(select(func.count(ReelLike.id)).where(ReelLike.reel_id == reel_id))

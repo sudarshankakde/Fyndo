@@ -74,6 +74,7 @@ class ReelOut(BaseModel):
     id: uuid.UUID
     title: str
     video_url: str
+    video_hls_url: Optional[str] = None
     thumbnail_url: str
     duration_seconds: int
     views_count: int
@@ -109,6 +110,7 @@ class ReelManagementOut(BaseModel):
     id: uuid.UUID
     title: str
     video_url: str
+    video_hls_url: Optional[str] = None
     thumbnail_url: str
     duration_seconds: int
     status: str
@@ -135,6 +137,7 @@ class ReelManagementOut(BaseModel):
 class ReelUpdateRequest(BaseModel):
     title: Optional[str] = Field(None, min_length=3, max_length=150)
     video_url: Optional[str] = Field(None, min_length=5)
+    video_hls_url: Optional[str] = Field(None, min_length=5)
     thumbnail_url: Optional[str] = Field(None, min_length=5)
     allow_comments: Optional[bool] = None
 

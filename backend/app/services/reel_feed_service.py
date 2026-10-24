@@ -29,6 +29,7 @@ from app.models.reel import Reel, ReelStatus
 from app.models.reel_engagement import ReelComment, ReelLike
 from app.models.user import User
 from app.schemas.reel import CouponFeedSummary, MerchantFeedSummary, ReelOut
+from app.services.cloudinary_service import CloudinaryService
 from app.services.reel_lifecycle_service import live_offer_clause
 from app.utils.geo import calculate_haversine_distance
 
@@ -36,14 +37,13 @@ logger = logging.getLogger("fyndo.reel_feed")
 
 KM_PER_DEGREE_LAT = 111.045
 MAX_FEED_CANDIDATES = 500
-FEED_CACHE_TTL_SECONDS = 30
+FEED_CACHE_TTL_SECONDS = 45
 
 
-def _cache_key(lat, lon, radius_km, sector, limit, cursor, user) -> str:
-    identity = str(user.id) if user else "anon"
+def _shared_cache_key(lat: float, lon: float, radius_km: int, sector: Optional[str], limit: int, cursor: Optional[str]) -> str:
     return (
-        f"feed:{round(lat, 3)}:{round(lon, 3)}:{radius_km}:"
-        f"{(sector or 'ALL').upper()}:{limit}:{cursor or 'START'}:{identity}"
+        f"feed:{round(lat, 2)}:{round(lon, 2)}:{radius_km}:"
+        f"{(sector or 'ALL').upper()}:{limit}:{cursor or 'START'}"
     )
 
 
@@ -104,6 +104,31 @@ def _coupon_summary(reel: Reel) -> Optional[CouponFeedSummary]:
     )
 
 
+async def _hydrate_user_likes(
+    db: AsyncSession, items: List[ReelOut], current_user: Optional[User]
+) -> List[ReelOut]:
+    """Personalizes `is_liked` status for the requesting user on shared feed items."""
+    if not current_user or not items:
+        return items
+    reel_ids = [item.id for item in items]
+    try:
+        liked_ids = set(
+            (
+                await db.execute(
+                    select(ReelLike.reel_id).where(
+                        ReelLike.user_id == current_user.id,
+                        ReelLike.reel_id.in_(reel_ids),
+                    )
+                )
+            ).scalars().all()
+        )
+        for item in items:
+            item.is_liked = item.id in liked_ids
+    except Exception as exc:
+        logger.warning(f"Error hydrating user likes: {exc}")
+    return items
+
+
 async def _query_feed(
     db: AsyncSession,
     lat: float,
@@ -112,7 +137,6 @@ async def _query_feed(
     sector: Optional[str],
     limit: int,
     cursor: Optional[str],
-    current_user: Optional[User],
 ) -> Tuple[List[ReelOut], Optional[str]]:
     lat_delta = radius_km / KM_PER_DEGREE_LAT
     lon_scale = max(math.cos(math.radians(lat)), 0.01)
@@ -148,7 +172,6 @@ async def _query_feed(
             scored.append((distance_m, str(reel.id), reel, merchant))
 
     if not scored:
-        # Fallback: return newest live approved reels if device GPS is outside merchant radius
         fallback_stmt = (
             select(Reel)
             .join(Merchant, Reel.merchant_id == Merchant.id)
@@ -187,32 +210,24 @@ async def _query_feed(
     like_counts = await _count_map(db, ReelLike, reel_ids)
     comment_counts = await _count_map(db, ReelComment, reel_ids)
 
-    liked_ids: set = set()
-    if current_user and reel_ids:
-        liked_ids = set(
-            (
-                await db.execute(
-                    select(ReelLike.reel_id).where(
-                        ReelLike.user_id == current_user.id,
-                        ReelLike.reel_id.in_(reel_ids),
-                    )
-                )
-            ).scalars().all()
-        )
-
     items: List[ReelOut] = []
     for distance_m, _, reel, merchant in page:
         merchant_sector = getattr(merchant.sector, "value", str(merchant.sector))
+        v_url = CloudinaryService.get_optimized_video_url(reel.video_url) or reel.video_url
+        hls_url = getattr(reel, "video_hls_url", None) or CloudinaryService.get_hls_url(
+            public_id=getattr(reel, "cloudinary_public_id", None), video_url=reel.video_url
+        )
         items.append(
             ReelOut(
                 id=reel.id,
                 title=reel.title,
-                video_url=reel.video_url,
+                video_url=v_url,
+                video_hls_url=hls_url,
                 thumbnail_url=reel.thumbnail_url,
                 duration_seconds=reel.duration_seconds,
                 views_count=reel.views_count,
                 likes_count=int(like_counts.get(reel.id, 0)),
-                is_liked=reel.id in liked_ids,
+                is_liked=False,
                 allow_comments=bool(getattr(reel, "allow_comments", True)),
                 comments_count=int(comment_counts.get(reel.id, 0)),
                 merchant=MerchantFeedSummary(
@@ -245,17 +260,21 @@ async def build_feed(
     cursor: Optional[str],
     current_user: Optional[User],
 ) -> Tuple[List[ReelOut], Optional[str]]:
-    """Returns a page of proximity-ordered reels plus the next cursor."""
-    cache_key = _cache_key(lat, lon, radius_km, sector, limit, cursor, current_user)
+    """Returns a page of proximity-ordered reels served from a shared Redis cache."""
+    cache_key = _shared_cache_key(lat, lon, radius_km, sector, limit, cursor)
     cached = await _cache_get(cache_key)
     if cached is not None:
-        return [ReelOut.model_validate(entry) for entry in cached.get("items", [])], cached.get("next_cursor")
+        items = [ReelOut.model_validate(entry) for entry in cached.get("items", [])]
+        items = await _hydrate_user_likes(db, items, current_user)
+        return items, cached.get("next_cursor")
 
     items, next_cursor = await _query_feed(
-        db, lat, lon, radius_km, sector, limit, cursor, current_user
+        db, lat, lon, radius_km, sector, limit, cursor
     )
     await _cache_set(
         cache_key,
         {"items": [item.model_dump(mode="json") for item in items], "next_cursor": next_cursor},
     )
+    items = await _hydrate_user_likes(db, items, current_user)
     return items, next_cursor
+

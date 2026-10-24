@@ -18,6 +18,7 @@ from app.schemas.admin import (
     AdminStaffUpdateRequest,
     AdminStatsResponse,
 )
+from app.services.cloudinary_service import CloudinaryService
 from app.services.reel_lifecycle_service import start_offer_clock
 
 
@@ -174,11 +175,14 @@ class AdminService:
 
     @classmethod
     async def create_reel(cls, req: AdminReelCreateRequest, db: AsyncSession) -> uuid.UUID:
+        v_url = CloudinaryService.get_optimized_video_url(req.video_url) or req.video_url
+        hls_url = CloudinaryService.get_hls_url(video_url=req.video_url)
         reel = Reel(
             merchant_id=req.merchant_id,
             title=req.title,
             duration_seconds=req.duration_seconds,
-            video_url=req.video_url,
+            video_url=v_url,
+            video_hls_url=hls_url,
             thumbnail_url=req.thumbnail_url,
             audio_type=AudioType.CAMERA_MIC,
             status=ReelStatus.APPROVED

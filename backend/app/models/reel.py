@@ -36,6 +36,7 @@ class Reel(Base):
     title: Mapped[str] = mapped_column(String(150), nullable=False)
     duration_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
     video_url: Mapped[str] = mapped_column(String(500), nullable=False)
+    video_hls_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     thumbnail_url: Mapped[str] = mapped_column(String(500), nullable=False)
     cloudinary_public_id: Mapped[str] = mapped_column(String(255), nullable=True)
     audio_type: Mapped[AudioType] = mapped_column(

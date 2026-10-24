@@ -15,12 +15,21 @@ class Base(DeclarativeBase):
 
 
 # Initialize async SQLAlchemy engine
-engine = create_async_engine(
-    settings.DATABASE_URL,
-    echo=(settings.ENVIRONMENT == "development"),
-    future=True,
-    pool_pre_ping=True
-)
+_is_sqlite = "sqlite" in settings.DATABASE_URL
+_engine_kwargs = {
+    "echo": (settings.ENVIRONMENT == "development" and not settings.is_production),
+    "future": True,
+    "pool_pre_ping": True,
+}
+if not _is_sqlite:
+    _engine_kwargs.update({
+        "pool_size": settings.DB_POOL_SIZE,
+        "max_overflow": settings.DB_MAX_OVERFLOW,
+        "pool_timeout": settings.DB_POOL_TIMEOUT,
+        "pool_recycle": settings.DB_POOL_RECYCLE_SECONDS,
+    })
+
+engine = create_async_engine(settings.DATABASE_URL, **_engine_kwargs)
 
 # Async session factory
 async_session_factory = async_sessionmaker(
@@ -78,6 +87,7 @@ _COMPAT_COLUMNS = {
         "can_upload_reels": ("BOOLEAN NOT NULL DEFAULT 0", "BOOLEAN NOT NULL DEFAULT FALSE"),
     },
     "reels": {
+        "video_hls_url": ("VARCHAR(500) NULL", "VARCHAR(500) NULL"),
         "expires_at": ("DATETIME NULL", "TIMESTAMPTZ NULL"),
         "grace_period_until": ("DATETIME NULL", "TIMESTAMPTZ NULL"),
         "is_expired": ("BOOLEAN NOT NULL DEFAULT 0", "BOOLEAN NOT NULL DEFAULT FALSE"),
@@ -125,7 +135,8 @@ async def ensure_compatibility_schema() -> None:
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """Dependency for providing database sessions to FastAPI routes."""
-    await ensure_compatibility_schema()
+    if not _compatibility_schema_ready:
+        await ensure_compatibility_schema()
     async with async_session_factory() as session:
         try:
             yield session
