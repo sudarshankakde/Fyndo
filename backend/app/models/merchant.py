@@ -1,7 +1,9 @@
 import uuid
 from datetime import datetime, timezone
 from enum import Enum
+from typing import Optional
 from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text
+
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.database import Base
@@ -117,10 +119,44 @@ class MerchantStaff(Base):
     pin_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     can_upload_reels: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    merchant = relationship("Merchant", back_populates="staff")
+
+
+class MerchantOnboardingDraft(Base):
+    __tablename__ = "merchant_onboarding_drafts"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        unique=True,
+        nullable=False,
+        index=True
+    )
+    step: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    business_name: Mapped[Optional[str]] = mapped_column(String(150), nullable=True)
+    sector: Mapped[Optional[str]] = mapped_column(String(30), nullable=True)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    address_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    city: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    pincode: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
+    latitude: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    longitude: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    gstin: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    kyc_doc_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
         nullable=False
     )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False
+    )
 
-    merchant = relationship("Merchant", back_populates="staff")

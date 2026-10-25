@@ -1,5 +1,7 @@
+import json
 import uuid
 import logging
+from datetime import datetime, timezone
 from typing import Optional
 from fastapi import HTTPException, status
 from sqlalchemy import select
@@ -76,11 +78,11 @@ class AuthService:
                     detail="This phone number is registered as a Merchant account. Please sign in through Merchant Login.",
                 )
         elif norm_role == "merchant":
-            if not is_merchant and user_role_str == "SHOPPER":
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="This phone number is registered as a Customer account. Please sign in through Customer Login.",
-                )
+            # An existing merchant (is_merchant == True) or an existing customer without
+            # a store record (is_merchant == False) is allowed to authenticate and onboard.
+            # Role upgrade to MERCHANT occurs only upon successful onboarding submission.
+            pass
+
 
     @classmethod
     async def verify_otp_and_login(
@@ -375,6 +377,49 @@ class AuthService:
             user.email = payload.email.strip()
         if payload.preferred_language is not None:
             user.preferred_language = payload.preferred_language.strip().lower()
+
+        # Shopper location fields
+        loc_changed = False
+        if payload.latitude is not None:
+            user.latitude = payload.latitude
+            loc_changed = True
+        if payload.longitude is not None:
+            user.longitude = payload.longitude
+            loc_changed = True
+        if payload.city is not None:
+            user.city = payload.city.strip()
+            loc_changed = True
+        if payload.address_text is not None:
+            user.address_text = payload.address_text.strip()
+            loc_changed = True
+        if payload.pincode is not None:
+            user.pincode = payload.pincode.strip()
+        if loc_changed:
+            user.location_updated_at = datetime.now(timezone.utc)
+
+        # Shopper category preferences
+        if payload.shopping_preferences is not None:
+            cleaned = [p.strip() for p in payload.shopping_preferences if isinstance(p, str) and p.strip()]
+            user.shopping_preferences = json.dumps(cleaned)
+
+        # Check completeness for shoppers
+        if user.role == UserRole.SHOPPER:
+            has_name = bool(user.full_name and len(user.full_name.strip()) >= 2)
+            has_prefs = False
+            if user.shopping_preferences:
+                try:
+                    prefs = json.loads(user.shopping_preferences)
+                    has_prefs = bool(isinstance(prefs, list) and len(prefs) >= 1)
+                except Exception:
+                    has_prefs = False
+            has_loc = bool(
+                user.latitude is not None
+                and user.longitude is not None
+                and bool(user.city and user.city.strip())
+                and bool(user.address_text and user.address_text.strip())
+            )
+            if has_name and has_prefs and has_loc:
+                user.onboarding_completed = True
 
         await db.flush()
         await db.refresh(user)

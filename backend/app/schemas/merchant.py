@@ -160,3 +160,34 @@ class AdminMerchantKycItem(BaseModel):
     kyc_rejection_reason: Optional[str] = None
     owner_phone: str
     submitted_at: datetime
+
+
+class MerchantDraftSaveRequest(BaseModel):
+    step: int = Field(1, ge=1, le=3)
+    business_name: Optional[str] = None
+    sector: Optional[str] = None
+    description: Optional[str] = None
+    address_text: Optional[str] = None
+    city: Optional[str] = None
+    pincode: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    gstin: Optional[str] = None
+    kyc_doc_url: Optional[str] = None
+
+
+class MerchantDraftOut(BaseModel):
+    has_draft: bool
+    step: int = 1
+    business_name: Optional[str] = None
+    sector: Optional[str] = None
+    description: Optional[str] = None
+    address_text: Optional[str] = None
+    city: Optional[str] = None
+    pincode: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    gstin: Optional[str] = None
+    kyc_doc_url: Optional[str] = None
+    updated_at: Optional[datetime] = None
+

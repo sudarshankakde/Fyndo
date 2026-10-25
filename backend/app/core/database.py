@@ -70,6 +70,14 @@ _COMPAT_COLUMNS = {
     "users": {
         "username": ("VARCHAR(30) NULL", "VARCHAR(30) NULL"),
         "profile_image_url": ("VARCHAR(500) NULL", "VARCHAR(500) NULL"),
+        "latitude": ("FLOAT NULL", "DOUBLE PRECISION NULL"),
+        "longitude": ("FLOAT NULL", "DOUBLE PRECISION NULL"),
+        "city": ("VARCHAR(100) NULL", "VARCHAR(100) NULL"),
+        "address_text": ("TEXT NULL", "TEXT NULL"),
+        "pincode": ("VARCHAR(20) NULL", "VARCHAR(20) NULL"),
+        "shopping_preferences": ("TEXT NULL", "TEXT NULL"),
+        "location_updated_at": ("DATETIME NULL", "TIMESTAMPTZ NULL"),
+        "onboarding_completed": ("BOOLEAN NOT NULL DEFAULT 0", "BOOLEAN NOT NULL DEFAULT FALSE"),
     },
     "merchants": {
         "profile_video_url": ("VARCHAR(500) NULL", "VARCHAR(500) NULL"),
@@ -109,7 +117,9 @@ async def ensure_compatibility_schema() -> None:
         return
 
     async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
         dialect = conn.dialect.name
+
         if dialect == "sqlite":
             for table, columns in _COMPAT_COLUMNS.items():
                 existing = await conn.run_sync(

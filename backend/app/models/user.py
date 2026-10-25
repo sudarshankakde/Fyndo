@@ -48,6 +48,21 @@ class User(Base):
         default=True,
         nullable=False
     )
+    latitude: Mapped[Optional[float]] = mapped_column(nullable=True)
+    longitude: Mapped[Optional[float]] = mapped_column(nullable=True)
+    city: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    address_text: Mapped[Optional[str]] = mapped_column(nullable=True)
+    pincode: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    shopping_preferences: Mapped[Optional[str]] = mapped_column(nullable=True)
+    location_updated_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True
+    )
+    onboarding_completed: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),

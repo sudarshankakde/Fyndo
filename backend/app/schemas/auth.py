@@ -42,6 +42,13 @@ class UserOut(BaseModel):
     merchant_id: Optional[uuid.UUID] = None
     business_name: Optional[str] = None
     kyc_status: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    city: Optional[str] = None
+    address_text: Optional[str] = None
+    pincode: Optional[str] = None
+    shopping_preferences: Optional[list[str]] = None
+    onboarding_completed: bool = False
 
     model_config = {"from_attributes": True}
 
@@ -97,6 +104,12 @@ class UserProfileUpdateRequest(BaseModel):
     profile_image_url: Optional[str] = Field(None, max_length=500)
     email: Optional[str] = Field(None, max_length=255)
     preferred_language: Optional[str] = Field(None, description="en, hi, or mr")
+    latitude: Optional[float] = Field(None, ge=-90.0, le=90.0)
+    longitude: Optional[float] = Field(None, ge=-180.0, le=180.0)
+    city: Optional[str] = Field(None, max_length=100)
+    address_text: Optional[str] = Field(None, max_length=1000)
+    pincode: Optional[str] = Field(None, max_length=20)
+    shopping_preferences: Optional[list[str]] = Field(None, description="Category keys/IDs chosen by shopper")
 
 
 class DevTokenRequest(BaseModel):

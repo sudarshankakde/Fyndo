@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.v1.endpoints.auth import get_current_user, get_optional_user
 from app.core.database import get_db
 from app.core.security import get_password_hash
-from app.models.merchant import KycStatus, Merchant, MerchantStaff, Sector
+from app.models.merchant import KycStatus, Merchant, MerchantOnboardingDraft, MerchantStaff, Sector
 import json
 from app.models.user import User, UserRole
 from app.schemas.common import ResponseEnvelope
@@ -19,6 +19,8 @@ from app.services.category_assets import (
 )
 from app.schemas.merchant import (
     MerchantOnboardRequest,
+    MerchantDraftSaveRequest,
+    MerchantDraftOut,
     MerchantKycResubmissionRequest,
     MerchantProfileUpdateRequest,
     MerchantOut,
@@ -28,8 +30,125 @@ from app.schemas.merchant import (
     StaffOut,
     StaffUpdateRequest,
 )
+from sqlalchemy import delete
 
 router = APIRouter()
+
+
+@router.get("/merchants/onboard/draft", response_model=ResponseEnvelope[MerchantDraftOut])
+async def get_onboarding_draft(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Retrieves current user's saved merchant onboarding draft."""
+    res = await db.execute(select(MerchantOnboardingDraft).where(MerchantOnboardingDraft.user_id == current_user.id))
+    draft = res.scalars().first()
+    if not draft:
+        return ResponseEnvelope(
+            data=MerchantDraftOut(has_draft=False, step=1),
+            message="No active draft found."
+        )
+
+    return ResponseEnvelope(
+        data=MerchantDraftOut(
+            has_draft=True,
+            step=draft.step,
+            business_name=draft.business_name,
+            sector=draft.sector,
+            description=draft.description,
+            address_text=draft.address_text,
+            city=draft.city,
+            pincode=draft.pincode,
+            latitude=draft.latitude,
+            longitude=draft.longitude,
+            gstin=draft.gstin,
+            kyc_doc_url=draft.kyc_doc_url,
+            updated_at=draft.updated_at,
+        ),
+        message="Draft retrieved successfully."
+    )
+
+
+@router.put("/merchants/onboard/draft", response_model=ResponseEnvelope[MerchantDraftOut])
+async def save_onboarding_draft(
+    request: MerchantDraftSaveRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Upserts current user's merchant onboarding draft."""
+    res = await db.execute(select(MerchantOnboardingDraft).where(MerchantOnboardingDraft.user_id == current_user.id))
+    draft = res.scalars().first()
+    if not draft:
+        draft = MerchantOnboardingDraft(
+            user_id=current_user.id,
+            step=request.step,
+            business_name=request.business_name,
+            sector=request.sector,
+            description=request.description,
+            address_text=request.address_text,
+            city=request.city,
+            pincode=request.pincode,
+            latitude=request.latitude,
+            longitude=request.longitude,
+            gstin=request.gstin,
+            kyc_doc_url=request.kyc_doc_url,
+        )
+        db.add(draft)
+    else:
+        draft.step = request.step
+        if request.business_name is not None:
+            draft.business_name = request.business_name
+        if request.sector is not None:
+            draft.sector = request.sector
+        if request.description is not None:
+            draft.description = request.description
+        if request.address_text is not None:
+            draft.address_text = request.address_text
+        if request.city is not None:
+            draft.city = request.city
+        if request.pincode is not None:
+            draft.pincode = request.pincode
+        if request.latitude is not None:
+            draft.latitude = request.latitude
+        if request.longitude is not None:
+            draft.longitude = request.longitude
+        if request.gstin is not None:
+            draft.gstin = request.gstin
+        if request.kyc_doc_url is not None:
+            draft.kyc_doc_url = request.kyc_doc_url
+
+    await db.flush()
+    await db.refresh(draft)
+
+    return ResponseEnvelope(
+        data=MerchantDraftOut(
+            has_draft=True,
+            step=draft.step,
+            business_name=draft.business_name,
+            sector=draft.sector,
+            description=draft.description,
+            address_text=draft.address_text,
+            city=draft.city,
+            pincode=draft.pincode,
+            latitude=draft.latitude,
+            longitude=draft.longitude,
+            gstin=draft.gstin,
+            kyc_doc_url=draft.kyc_doc_url,
+            updated_at=draft.updated_at,
+        ),
+        message="Draft saved successfully."
+    )
+
+
+@router.delete("/merchants/onboard/draft", response_model=ResponseEnvelope[bool])
+async def delete_onboarding_draft(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Deletes current user's merchant onboarding draft."""
+    await db.execute(delete(MerchantOnboardingDraft).where(MerchantOnboardingDraft.user_id == current_user.id))
+    await db.flush()
+    return ResponseEnvelope(data=True, message="Draft cleared successfully.")
 
 
 @router.post("/merchants/onboard", response_model=ResponseEnvelope[MerchantOut])
@@ -39,23 +158,36 @@ async def onboard_merchant(
     db: AsyncSession = Depends(get_db)
 ):
     """Registers a new merchant profile and queues KYC documents for Admin verification."""
-    # Check if user already owns a merchant
+    # Check if user already owns a merchant (idempotency check)
     existing_res = await db.execute(select(Merchant).where(Merchant.user_id == current_user.id))
-    if existing_res.scalars().first():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="User has already registered a merchant store."
+    existing_merchant = existing_res.scalars().first()
+    if existing_merchant:
+        # User already registered a merchant; ensure user role is updated and return existing merchant idempotently
+        if current_user.role != UserRole.MERCHANT:
+            current_user.role = UserRole.MERCHANT
+            await db.flush()
+        # Clean up any lingering draft
+        await db.execute(delete(MerchantOnboardingDraft).where(MerchantOnboardingDraft.user_id == current_user.id))
+        await db.flush()
+        return ResponseEnvelope(
+            data=MerchantOut.model_validate(existing_merchant),
+            message="Merchant profile already exists."
         )
 
-    from app.services.category_assets import get_default_cover_url, get_default_logo_url
+    # Normalize sector
+    normalized_sector_str = normalize_sector(request.sector)
+    try:
+        sector_enum = Sector(normalized_sector_str)
+    except ValueError:
+        sector_enum = Sector.OTHER
 
-    cover_url = request.cover_url or get_default_cover_url(request.sector)
-    logo_url = request.logo_url or get_default_logo_url(request.sector)
+    cover_url = request.cover_url or get_default_cover_url(sector_enum.value)
+    logo_url = request.logo_url or get_default_logo_url(sector_enum.value)
 
     merchant = Merchant(
         user_id=current_user.id,
         business_name=request.business_name,
-        sector=Sector(request.sector),
+        sector=sector_enum,
         address_text=request.address_text,
         city=request.city,
         latitude=request.latitude,
@@ -69,8 +201,11 @@ async def onboard_merchant(
     )
     db.add(merchant)
 
-    # Upgrade user role to MERCHANT
+    # Upgrade user role to MERCHANT only upon successful creation
     current_user.role = UserRole.MERCHANT
+
+    # Clean up any saved onboarding draft atomically
+    await db.execute(delete(MerchantOnboardingDraft).where(MerchantOnboardingDraft.user_id == current_user.id))
 
     await db.flush()
     await db.refresh(merchant)
