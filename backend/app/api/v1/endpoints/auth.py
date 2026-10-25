@@ -117,8 +117,10 @@ async def get_optional_user(
 
 
 @router.post("/auth/otp/send", response_model=ResponseEnvelope[OtpSendResponse])
-async def send_otp(request: OtpSendRequest):
+async def send_otp(request: OtpSendRequest, db: AsyncSession = Depends(get_db)):
     """Sends a 6-digit OTP to the Indian mobile number (+91)."""
+    await AuthService.validate_role_eligibility(request.phone, request.role, db)
+
     success, test_otp, msg = await OtpService.send_otp(request.phone, request.channel)
     if not success:
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=msg)
@@ -138,7 +140,8 @@ async def verify_otp(request: OtpVerifyRequest, response: Response, db: AsyncSes
         phone=request.phone,
         otp=request.otp,
         preferred_language=request.preferred_language,
-        db=db
+        db=db,
+        role=request.role
     )
     _set_refresh_cookie(response, data.refresh_token)
     return ResponseEnvelope(data=data, message="Authentication successful")

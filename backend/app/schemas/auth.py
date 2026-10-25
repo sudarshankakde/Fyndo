@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field, field_validator
 class OtpSendRequest(BaseModel):
     phone: str = Field(..., description="Indian phone number with country code e.g. +919876543210")
     channel: str = Field("SMS", description="SMS or WHATSAPP")
+    role: Optional[str] = Field(None, description="Intended login role: 'shopper' or 'merchant'")
 
     @field_validator("phone")
     @classmethod
@@ -26,6 +27,7 @@ class OtpVerifyRequest(BaseModel):
     phone: str
     otp: str = Field(..., min_length=6, max_length=6)
     preferred_language: str = Field("en", description="en, hi, or mr")
+    role: Optional[str] = Field(None, description="Intended login role: 'shopper' or 'merchant'")
 
 
 class UserOut(BaseModel):

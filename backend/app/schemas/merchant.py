@@ -16,6 +16,7 @@ class MerchantOnboardRequest(BaseModel):
     kyc_doc_url: str = Field(..., min_length=10)
     cover_url: Optional[str] = None
     logo_url: Optional[str] = None
+    description: Optional[str] = None
 
     @field_validator("sector")
     @classmethod

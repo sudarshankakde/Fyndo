@@ -37,14 +37,63 @@ class AuthService:
     """Core domain service for user and staff authentication."""
 
     @classmethod
+    async def validate_role_eligibility(
+        cls,
+        phone: str,
+        role: Optional[str],
+        db: AsyncSession,
+    ) -> None:
+        """Validates that a phone number is eligible for the requested role (shopper vs merchant)."""
+        if not role:
+            return
+
+        norm_role = role.strip().lower()
+        if norm_role not in ("shopper", "customer", "merchant"):
+            return
+
+        stmt = select(User).where(User.phone == phone)
+        res = await db.execute(stmt)
+        user = res.scalars().first()
+        if not user:
+            # Phone is not registered; new shopper or new merchant registration is allowed
+            return
+
+        # Determine if user is registered as a merchant
+        is_merchant = False
+        user_role_str = user.role.value if hasattr(user.role, "value") else str(user.role)
+        if user_role_str == "MERCHANT":
+            is_merchant = True
+        else:
+            merch_stmt = select(Merchant).where(Merchant.user_id == user.id)
+            merch_res = await db.execute(merch_stmt)
+            if merch_res.scalars().first():
+                is_merchant = True
+
+        if norm_role in ("shopper", "customer"):
+            if is_merchant:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="This phone number is registered as a Merchant account. Please sign in through Merchant Login.",
+                )
+        elif norm_role == "merchant":
+            if not is_merchant and user_role_str == "SHOPPER":
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="This phone number is registered as a Customer account. Please sign in through Customer Login.",
+                )
+
+    @classmethod
     async def verify_otp_and_login(
         cls,
         phone: str,
         otp: str,
         preferred_language: str,
-        db: AsyncSession
+        db: AsyncSession,
+        role: Optional[str] = None,
     ) -> AuthTokenResponse:
         """Verifies 6-digit OTP and authenticates/upserts shopper or merchant user."""
+        await cls.validate_role_eligibility(phone, role, db)
+
         is_valid = await OtpService.verify_otp(phone, otp)
         if not is_valid:
             raise HTTPException(

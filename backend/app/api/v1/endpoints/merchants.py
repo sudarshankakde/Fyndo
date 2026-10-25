@@ -65,6 +65,7 @@ async def onboard_merchant(
         kyc_status=KycStatus.PENDING,
         cover_url=cover_url,
         logo_url=logo_url,
+        description=request.description,
     )
     db.add(merchant)
 
