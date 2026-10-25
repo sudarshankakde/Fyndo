@@ -68,7 +68,17 @@ async def get_proximity_feed(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid feed cursor."
         )
-    return ResponseEnvelope(data=items, meta={"next_cursor": next_cursor})
+    meta = {
+        "next_cursor": next_cursor,
+        "serviceable": len(items) > 0,
+        "radius_km": radius_km,
+    }
+    message = (
+        f"Found {len(items)} offers near you"
+        if items
+        else "We don't serve in this area yet. We will be here soon!"
+    )
+    return ResponseEnvelope(data=items, meta=meta, message=message)
 
 
 @router.get("/reels/mine", response_model=ResponseEnvelope[list[ReelManagementOut]])
