@@ -1,7 +1,7 @@
 import uuid
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select, delete, func, asc
+from sqlalchemy import select, delete, func, asc, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.v1.endpoints.auth import get_current_user, get_optional_user
 from app.core.config import settings
@@ -436,7 +436,7 @@ async def list_active_cities(
     else:
         query = query.where(Merchant.kyc_status != KycStatus.REJECTED)
 
-    query = query.group_by(norm_city).order_by(asc("shop_count"), asc("canonical_city"))
+    query = query.group_by(norm_city).order_by(desc("shop_count"), asc("canonical_city"))
     res = await db.execute(query)
     rows = res.all()
 

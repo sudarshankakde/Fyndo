@@ -69,11 +69,11 @@ async def test_active_cities_ordering_and_aggregation(client: AsyncClient):
     assert pune_entry is not None
     assert pune_entry["shop_count"] >= 2
 
-    # Verify ordering: ascending by shop_count, then ascending by city name
+    # Verify ordering: descending by shop_count, then ascending by city name
     for i in range(len(cities_list) - 1):
         c1 = cities_list[i]
         c2 = cities_list[i + 1]
         if c1["shop_count"] == c2["shop_count"]:
             assert c1["city"] <= c2["city"], f"{c1['city']} should be <= {c2['city']} alphabetically"
         else:
-            assert c1["shop_count"] < c2["shop_count"], f"Counts should be in ascending order"
+            assert c1["shop_count"] > c2["shop_count"], f"Counts should be in descending order"
