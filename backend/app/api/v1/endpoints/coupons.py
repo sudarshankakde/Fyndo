@@ -34,7 +34,8 @@ async def get_user_wallet(
     stmt = (
         select(UserCoupon)
         .options(
-            selectinload(UserCoupon.template).selectinload(CouponTemplate.merchant)
+            selectinload(UserCoupon.template).selectinload(CouponTemplate.merchant),
+            selectinload(UserCoupon.template).selectinload(CouponTemplate.reel),
         )
         .where(UserCoupon.user_id == current_user.id)
         .order_by(UserCoupon.claimed_at.desc())
@@ -61,6 +62,7 @@ async def get_user_wallet(
 
         tmpl = c.template
         merch = tmpl.merchant if tmpl else None
+        reel = tmpl.reel if tmpl else None
         d_type = tmpl.discount_type.value if tmpl and hasattr(tmpl.discount_type, "value") else (str(tmpl.discount_type) if tmpl else "PERCENTAGE")
 
         wallet_items.append(
@@ -72,8 +74,16 @@ async def get_user_wallet(
                 discount_value=float(tmpl.discount_value) if tmpl else 0.0,
                 min_order_amount=float(tmpl.min_order_amount) if tmpl else 0.0,
                 validity_days=tmpl.validity_days if tmpl else 0,
+                merchant_id=merch.id if merch else None,
                 merchant_name=merch.business_name if merch else "Fyndo Partner",
                 merchant_address=merch.address_text if merch else "",
+                merchant_category=(merch.sector.value if hasattr(merch.sector, "value") else str(merch.sector)) if merch and merch.sector else None,
+                merchant_logo_url=merch.logo_url if merch else None,
+                merchant_cover_url=merch.cover_url if merch else None,
+                merchant_profile_video_thumbnail_url=merch.profile_video_thumbnail_url if merch else None,
+                reel_id=reel.id if reel else (tmpl.reel_id if tmpl else None),
+                reel_thumbnail_url=reel.thumbnail_url if reel else None,
+                reel_video_url=reel.video_url if reel else None,
                 status=current_status,
                 claimed_at=c.claimed_at,
                 expires_at=c.expires_at,

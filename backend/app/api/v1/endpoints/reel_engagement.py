@@ -16,7 +16,7 @@ from app.core.database import get_db
 from app.core.rate_limit import rate_limit
 from app.models.user import User
 from app.schemas.common import ResponseEnvelope
-from app.schemas.reel import ReelCommentCreate, ReelCommentOut
+from app.schemas.reel import ReelCommentCreate, ReelCommentOut, SavedReelOut
 from app.services import reel_engagement_service as engagement
 
 router = APIRouter()
@@ -113,3 +113,36 @@ async def create_reel_comment(
     except PermissionError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
     return ResponseEnvelope(data=comment, message="Comment posted.")
+
+
+@router.get("/reels/saved", response_model=ResponseEnvelope[list[SavedReelOut]])
+async def list_saved_reels(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    _: None = Depends(rate_limit("reels_saved_read", 120)),
+):
+    """Returns the signed-in user's saved/bookmarked reels."""
+    saved = await engagement.list_saved_reels(db, user=current_user)
+    return ResponseEnvelope(data=saved)
+
+
+@router.post("/reels/{reel_id}/bookmark", response_model=ResponseEnvelope[dict])
+@router.post("/reels/{reel_id}/save", response_model=ResponseEnvelope[dict])
+async def toggle_reel_bookmark(
+    reel_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    _: None = Depends(rate_limit("reel_bookmark", 120)),
+):
+    """Toggles bookmarking a reel for the current user."""
+    try:
+        bookmarked, count = await engagement.toggle_bookmark(
+            db, reel_id=reel_id, user=current_user
+        )
+    except engagement.ReelNotFoundError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Reel not found.")
+    return ResponseEnvelope(
+        data={"bookmarked": bookmarked, "bookmarks_count": count},
+        message="Reel saved to collection." if bookmarked else "Reel removed from saved.",
+    )
+

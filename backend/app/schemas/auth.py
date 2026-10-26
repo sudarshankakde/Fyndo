@@ -1,6 +1,13 @@
 import uuid
+from datetime import datetime
 from typing import Optional
 from pydantic import BaseModel, Field, field_validator
+
+
+class ShopperProfileMetrics(BaseModel):
+    total_saved: float = Field(0.0, description="Sum of discounts applied from redemptions")
+    offers_claimed: int = Field(0, description="Total coupons claimed by user")
+    stores_visited: int = Field(0, description="Distinct stores visited with redemptions")
 
 
 class OtpSendRequest(BaseModel):
@@ -49,6 +56,8 @@ class UserOut(BaseModel):
     pincode: Optional[str] = None
     shopping_preferences: Optional[list[str]] = None
     onboarding_completed: bool = False
+    created_at: Optional[datetime] = None
+    metrics: Optional[ShopperProfileMetrics] = None
 
     model_config = {"from_attributes": True}
 

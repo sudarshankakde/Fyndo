@@ -79,8 +79,16 @@ class UserCouponWalletItem(BaseModel):
     discount_value: float
     min_order_amount: float
     validity_days: int
+    merchant_id: Optional[uuid.UUID] = None
     merchant_name: str
     merchant_address: str
+    merchant_category: Optional[str] = None
+    merchant_logo_url: Optional[str] = None
+    merchant_cover_url: Optional[str] = None
+    merchant_profile_video_thumbnail_url: Optional[str] = None
+    reel_id: Optional[uuid.UUID] = None
+    reel_thumbnail_url: Optional[str] = None
+    reel_video_url: Optional[str] = None
     status: str
     claimed_at: datetime
     expires_at: datetime

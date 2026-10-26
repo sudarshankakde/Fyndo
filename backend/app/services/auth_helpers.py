@@ -1,11 +1,12 @@
 import json
 import uuid
 from typing import Optional
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.models.coupon import RedemptionsLedger, UserCoupon
 from app.models.merchant import Merchant
 from app.models.user import User, UserRole
-from app.schemas.auth import UserOut
+from app.schemas.auth import ShopperProfileMetrics, UserOut
 
 
 async def build_user_out(user: User, db: AsyncSession) -> UserOut:
@@ -55,6 +56,38 @@ async def build_user_out(user: User, db: AsyncSession) -> UserOut:
         persisted_flag = bool(getattr(user, "onboarding_completed", False))
         onboarding_completed = persisted_flag or (has_name and has_prefs and has_loc)
 
+    metrics: Optional[ShopperProfileMetrics] = None
+    if is_shopper:
+        # Calculate real Shopper metrics via SQL aggregations
+        total_saved_stmt = (
+            select(func.coalesce(func.sum(RedemptionsLedger.discount_applied), 0.0))
+            .join(UserCoupon, RedemptionsLedger.user_coupon_id == UserCoupon.id)
+            .where(UserCoupon.user_id == user.id)
+        )
+        total_saved_res = await db.execute(total_saved_stmt)
+        total_saved = float(total_saved_res.scalar() or 0.0)
+
+        claims_stmt = (
+            select(func.count(UserCoupon.id))
+            .where(UserCoupon.user_id == user.id)
+        )
+        claims_res = await db.execute(claims_stmt)
+        offers_claimed = int(claims_res.scalar() or 0)
+
+        stores_stmt = (
+            select(func.count(func.distinct(RedemptionsLedger.merchant_id)))
+            .join(UserCoupon, RedemptionsLedger.user_coupon_id == UserCoupon.id)
+            .where(UserCoupon.user_id == user.id)
+        )
+        stores_res = await db.execute(stores_stmt)
+        stores_visited = int(stores_res.scalar() or 0)
+
+        metrics = ShopperProfileMetrics(
+            total_saved=total_saved,
+            offers_claimed=offers_claimed,
+            stores_visited=stores_visited,
+        )
+
     return UserOut(
         id=user.id,
         phone=user.phone,
@@ -74,4 +107,6 @@ async def build_user_out(user: User, db: AsyncSession) -> UserOut:
         pincode=getattr(user, "pincode", None),
         shopping_preferences=shopping_prefs,
         onboarding_completed=onboarding_completed,
+        created_at=getattr(user, "created_at", None),
+        metrics=metrics,
     )

@@ -80,12 +80,37 @@ class ReelOut(BaseModel):
     views_count: int
     likes_count: int = 0
     is_liked: bool = False
+    is_bookmarked: bool = False
     allow_comments: bool = True
     comments_count: int = 0
     merchant: MerchantFeedSummary
     coupon: Optional[CouponFeedSummary] = None
 
     model_config = {"from_attributes": True}
+
+
+class SavedReelOut(BaseModel):
+    id: uuid.UUID
+    reel_id: uuid.UUID
+    title: str
+    video_url: str
+    video_hls_url: Optional[str] = None
+    thumbnail_url: str
+    duration_seconds: int
+    views_count: int
+    likes_count: int = 0
+    is_liked: bool = False
+    is_bookmarked: bool = True
+    shop_name: str
+    merchant_id: uuid.UUID
+    merchant_logo_url: Optional[str] = None
+    merchant_cover_url: Optional[str] = None
+    merchant_sector: Optional[str] = None
+    offer_title: Optional[str] = None
+    discount_type: Optional[str] = None
+    discount_value: Optional[float] = None
+    saved_at: datetime
+
 
 
 class ReelCommentCreate(BaseModel):

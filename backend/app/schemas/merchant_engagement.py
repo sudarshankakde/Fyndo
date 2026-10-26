@@ -37,7 +37,10 @@ class FollowedMerchantOut(BaseModel):
     city: str
     address_text: str
     profile_video_thumbnail_url: Optional[str] = None
+    logo_url: Optional[str] = None
+    cover_url: Optional[str] = None
     followed_at: datetime
+
 
 
 class RatingCreateRequest(BaseModel):

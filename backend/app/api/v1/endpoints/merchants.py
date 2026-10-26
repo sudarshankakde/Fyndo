@@ -574,6 +574,8 @@ async def get_public_merchant(
             longitude=merchant.longitude,
             profile_video_url=merchant.profile_video_url,
             profile_video_thumbnail_url=merchant.profile_video_thumbnail_url,
+            cover_url=merchant.cover_url,
+            logo_url=merchant.logo_url,
             followers_count=await engagement.followers_count(db, merchant.id),
             is_following=await engagement.is_following(db, merchant.id, current_user),
             rating_average=ratings["average"],

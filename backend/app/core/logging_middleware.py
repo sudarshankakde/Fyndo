@@ -46,6 +46,9 @@ class RequestLoggingMiddleware:
 
         try:
             await self.app(scope, receive, send_wrapper)
+        except Exception as exc:
+            access_logger.exception("Unhandled exception during request: %s", exc)
+            raise
         finally:
             duration_ms = round((time.perf_counter() - started) * 1000, 2)
             self._log(scope, status_code, duration_ms)

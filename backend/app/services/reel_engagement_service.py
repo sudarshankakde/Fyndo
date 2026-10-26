@@ -16,11 +16,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.privacy import mask_phone
 from app.core.redis import get_redis_client
+from app.models.coupon import CouponTemplate
+from app.models.merchant import Merchant
 from app.models.reel import Reel, ReelStatus, ReelView
-from app.models.reel_engagement import ReelComment, ReelLike
+from app.models.reel_engagement import ReelComment, ReelLike, ReelBookmark
 from app.models.user import User, UserRole
-from app.schemas.reel import ReelCommentOut
+from app.schemas.reel import ReelCommentOut, SavedReelOut
 from app.services.reel_lifecycle_service import live_offer_clause
+
 
 logger = logging.getLogger("fyndo.reel_engagement")
 
@@ -227,3 +230,99 @@ async def create_comment(
     await db.flush()
     await db.refresh(comment)
     return _comment_out(comment, user)
+
+
+async def toggle_bookmark(
+    db: AsyncSession, *, reel_id: uuid.UUID, user: User
+) -> Tuple[bool, int]:
+    """Adds or removes the current user's bookmark on a reel. Returns (bookmarked, bookmarks_count)."""
+    if not await _get_live_reel(db, reel_id):
+        raise ReelNotFoundError()
+
+    existing = (
+        await db.execute(
+            select(ReelBookmark).where(
+                ReelBookmark.reel_id == reel_id, ReelBookmark.user_id == user.id
+            )
+        )
+    ).scalars().first()
+
+    try:
+        async with db.begin_nested():
+            if existing:
+                await db.execute(delete(ReelBookmark).where(ReelBookmark.id == existing.id))
+                bookmarked = False
+            else:
+                db.add(ReelBookmark(reel_id=reel_id, user_id=user.id))
+                bookmarked = True
+            await db.flush()
+    except IntegrityError:
+        # Concurrent double-tap handled gracefully
+        bookmarked = True
+
+    count = (
+        await db.execute(
+            select(func.count(ReelBookmark.id)).where(ReelBookmark.reel_id == reel_id)
+        )
+    ).scalar_one()
+    return bookmarked, int(count)
+
+
+async def list_saved_reels(db: AsyncSession, *, user: User) -> List[SavedReelOut]:
+    """Returns all bookmarked reels for the current user, newest saved first."""
+    rows = (
+        await db.execute(
+            select(ReelBookmark.created_at, Reel, Merchant, CouponTemplate)
+            .join(Reel, ReelBookmark.reel_id == Reel.id)
+            .join(Merchant, Reel.merchant_id == Merchant.id)
+            .outerjoin(CouponTemplate, Reel.id == CouponTemplate.reel_id)
+            .where(
+                ReelBookmark.user_id == user.id,
+                Reel.deleted_at.is_(None),
+            )
+            .order_by(ReelBookmark.created_at.desc())
+        )
+    ).all()
+
+    reel_ids = [reel.id for _, reel, _, _ in rows]
+    liked_ids = set()
+    if reel_ids:
+        liked_ids = set(
+            (
+                await db.execute(
+                    select(ReelLike.reel_id).where(
+                        ReelLike.user_id == user.id,
+                        ReelLike.reel_id.in_(reel_ids),
+                    )
+                )
+            ).scalars().all()
+        )
+
+    out: List[SavedReelOut] = []
+    for saved_at, reel, merchant, coupon in rows:
+        out.append(
+            SavedReelOut(
+                id=reel.id,
+                reel_id=reel.id,
+                title=reel.title,
+                video_url=reel.video_url,
+                video_hls_url=reel.video_hls_url,
+                thumbnail_url=reel.thumbnail_url,
+                duration_seconds=reel.duration_seconds,
+                views_count=reel.views_count,
+                likes_count=0,
+                is_liked=reel.id in liked_ids,
+                is_bookmarked=True,
+                shop_name=merchant.business_name,
+                merchant_id=merchant.id,
+                merchant_logo_url=merchant.logo_url,
+                merchant_cover_url=merchant.cover_url,
+                merchant_sector=merchant.sector.value if hasattr(merchant.sector, "value") else str(merchant.sector),
+                offer_title=coupon.title if coupon else None,
+                discount_type=coupon.discount_type.value if coupon and hasattr(coupon.discount_type, "value") else (str(coupon.discount_type) if coupon else None),
+                discount_value=float(coupon.discount_value) if coupon else None,
+                saved_at=saved_at,
+            )
+        )
+    return out
+

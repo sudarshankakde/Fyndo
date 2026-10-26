@@ -144,6 +144,8 @@ class PublicMerchantOut(BaseModel):
     longitude: float
     profile_video_url: Optional[str] = None
     profile_video_thumbnail_url: Optional[str] = None
+    cover_url: Optional[str] = None
+    logo_url: Optional[str] = None
     followers_count: int = 0
     is_following: bool = False
     rating_average: float = 0.0

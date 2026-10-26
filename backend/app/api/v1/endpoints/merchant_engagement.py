@@ -104,6 +104,8 @@ async def list_followed_merchants(
                 city=merchant.city,
                 address_text=merchant.address_text,
                 profile_video_thumbnail_url=merchant.profile_video_thumbnail_url,
+                logo_url=merchant.logo_url,
+                cover_url=merchant.cover_url,
                 followed_at=followed_at,
             )
             for merchant, followed_at in rows

@@ -26,7 +26,7 @@ from app.core.redis import get_redis_client
 from app.models.coupon import CouponTemplate
 from app.models.merchant import Merchant
 from app.models.reel import Reel, ReelStatus
-from app.models.reel_engagement import ReelComment, ReelLike
+from app.models.reel_engagement import ReelComment, ReelLike, ReelBookmark
 from app.models.user import User
 from app.schemas.reel import CouponFeedSummary, MerchantFeedSummary, ReelOut
 from app.services.cloudinary_service import CloudinaryService
@@ -107,7 +107,7 @@ def _coupon_summary(reel: Reel) -> Optional[CouponFeedSummary]:
 async def _hydrate_user_likes(
     db: AsyncSession, items: List[ReelOut], current_user: Optional[User]
 ) -> List[ReelOut]:
-    """Personalizes `is_liked` status for the requesting user on shared feed items."""
+    """Personalizes `is_liked` and `is_bookmarked` status for the requesting user on shared feed items."""
     if not current_user or not items:
         return items
     reel_ids = [item.id for item in items]
@@ -122,11 +122,23 @@ async def _hydrate_user_likes(
                 )
             ).scalars().all()
         )
+        bookmarked_ids = set(
+            (
+                await db.execute(
+                    select(ReelBookmark.reel_id).where(
+                        ReelBookmark.user_id == current_user.id,
+                        ReelBookmark.reel_id.in_(reel_ids),
+                    )
+                )
+            ).scalars().all()
+        )
         for item in items:
             item.is_liked = item.id in liked_ids
+            item.is_bookmarked = item.id in bookmarked_ids
     except Exception as exc:
-        logger.warning(f"Error hydrating user likes: {exc}")
+        logger.warning(f"Error hydrating user likes/bookmarks: {exc}")
     return items
+
 
 
 async def _query_feed(

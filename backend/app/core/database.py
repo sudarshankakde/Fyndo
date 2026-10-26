@@ -53,7 +53,9 @@ _PERFORMANCE_INDEXES = (
     "CREATE INDEX IF NOT EXISTS ix_redemptions_ledger_merchant_created "
     "ON redemptions_ledger (merchant_id, created_at)",
     "CREATE INDEX IF NOT EXISTS ix_reels_expires_at ON reels (expires_at)",
+    "CREATE INDEX IF NOT EXISTS ix_reel_bookmarks_user ON reel_bookmarks (user_id, created_at)",
 )
+
 
 
 # Columns added after the initial beta schema: table -> column -> (sqlite, postgres) DDL.

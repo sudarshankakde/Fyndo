@@ -13,6 +13,7 @@ ALLOWED_UPLOAD_TARGETS = {
     "stores": {"image", "auto"},
     "covers": {"image", "auto"},
     "logos": {"image", "auto"},
+    "avatars": {"image", "auto"},
     "showcase": {"video", "image", "auto"},
 }
 

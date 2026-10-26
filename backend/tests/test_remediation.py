@@ -104,7 +104,7 @@ async def _seed_approved_reel(
         session.add(template)
         await session.flush()
         await session.commit()
-        return str(reel.id), str(merchant.id), str(owner.id)
+        return str(reel.id), str(merchant.id), str(template.id)
 
 
 async def _seed_claimed_coupon():
@@ -396,3 +396,60 @@ async def test_feed_personalises_is_liked_and_paginates(client: AsyncClient):
     assert body["data"][0]["id"] == reel_id
     assert body["data"][0]["is_liked"] is True
     assert "next_cursor" in body["meta"]
+
+
+@pytest.mark.asyncio
+async def test_saved_reels_and_followed_merchants(client: AsyncClient):
+    reel_id, merchant_id, _ = await _seed_approved_reel()
+    token = await _login(client, _phone())
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # 1. Bookmark the reel
+    save_resp = await client.post(f"/api/v1/reels/{reel_id}/bookmark", headers=headers)
+    assert save_resp.status_code == 200
+    assert save_resp.json()["data"]["bookmarked"] is True
+
+    # 2. Check saved reels list
+    list_resp = await client.get("/api/v1/reels/saved", headers=headers)
+    assert list_resp.status_code == 200
+    saved_items = list_resp.json()["data"]
+    assert any(item["reel_id"] == reel_id for item in saved_items)
+    saved_reel = next(item for item in saved_items if item["reel_id"] == reel_id)
+    assert saved_reel["thumbnail_url"] is not None
+    assert saved_reel["shop_name"] is not None
+
+    # 3. Unbookmark the reel
+    unsave_resp = await client.post(f"/api/v1/reels/{reel_id}/bookmark", headers=headers)
+    assert unsave_resp.status_code == 200
+    assert unsave_resp.json()["data"]["bookmarked"] is False
+
+    # 4. Confirm removed
+    list_resp_2 = await client.get("/api/v1/reels/saved", headers=headers)
+    assert not any(item["reel_id"] == reel_id for item in list_resp_2.json()["data"])
+
+
+@pytest.mark.asyncio
+async def test_wallet_coupons_include_merchant_metadata(client: AsyncClient):
+    _, merchant_id, tmpl_id = await _seed_approved_reel()
+    token = await _login(client, _phone())
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # 1. Claim coupon
+    claim_resp = await client.post(f"/api/v1/coupons/{tmpl_id}/claim", headers=headers)
+    assert claim_resp.status_code == 200
+
+    # 2. Fetch wallet
+    wallet_resp = await client.get("/api/v1/coupons/wallet", headers=headers)
+    assert wallet_resp.status_code == 200
+    wallet_items = wallet_resp.json()["data"]
+    assert len(wallet_items) >= 1
+    item = next(w for w in wallet_items if w["coupon_template_id"] == str(tmpl_id))
+    assert item["merchant_id"] == str(merchant_id)
+    assert item["merchant_name"] is not None
+    assert "merchant_logo_url" in item
+    assert "merchant_cover_url" in item
+    assert "merchant_category" in item
+    assert "reel_id" in item
+    assert "reel_thumbnail_url" in item
+    assert "reel_video_url" in item
+
