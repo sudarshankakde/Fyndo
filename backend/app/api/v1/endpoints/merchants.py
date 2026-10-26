@@ -420,7 +420,9 @@ async def list_active_cities(
     query = (
         select(
             norm_city.label("canonical_city"),
-            func.count(func.distinct(Merchant.id)).label("shop_count")
+            func.count(func.distinct(Merchant.id)).label("shop_count"),
+            func.avg(Merchant.latitude).label("latitude"),
+            func.avg(Merchant.longitude).label("longitude"),
         )
         .join(User, Merchant.user_id == User.id)
         .where(
@@ -439,7 +441,12 @@ async def list_active_cities(
     rows = res.all()
 
     cities = [
-        {"city": row.canonical_city.title(), "shop_count": int(row.shop_count)}
+        {
+            "city": row.canonical_city.title(),
+            "shop_count": int(row.shop_count),
+            "latitude": float(row.latitude) if row.latitude is not None else None,
+            "longitude": float(row.longitude) if row.longitude is not None else None,
+        }
         for row in rows
         if row.canonical_city and row.shop_count > 0
     ]
