@@ -1,8 +1,9 @@
 import uuid
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select, delete, func, asc, desc
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.utils.geo import calculate_haversine_distance
 from app.api.v1.endpoints.auth import get_current_user, get_optional_user
 from app.core.config import settings
 from app.core.database import get_db
@@ -411,6 +412,19 @@ async def update_staff(
     return ResponseEnvelope(data=StaffOut.model_validate(staff), message="Staff member updated successfully.")
 
 
+KNOWN_CITY_CENTERS = {
+    "pune": (18.5204, 73.8567),
+    "nagpur": (21.1458, 79.0882),
+    "mumbai": (19.0760, 72.8777),
+    "nashik": (19.9975, 73.7898),
+    "bengaluru": (12.9716, 77.5946),
+    "delhi": (28.6139, 77.2090),
+    "galleborgaon": (20.0889, 75.1195),
+    "chhatrapati sambhajinagar": (19.8762, 75.3433),
+    "aurangabad": (19.8762, 75.3433),
+}
+
+
 @router.get("/merchants/cities", response_model=ResponseEnvelope[List[dict]])
 async def list_active_cities(
     db: AsyncSession = Depends(get_db),
@@ -440,19 +454,95 @@ async def list_active_cities(
     res = await db.execute(query)
     rows = res.all()
 
-    cities = [
-        {
+    cities = []
+    for row in rows:
+        if not row.canonical_city or row.shop_count <= 0:
+            continue
+        c_lower = row.canonical_city.lower()
+        if c_lower in KNOWN_CITY_CENTERS:
+            c_lat, c_lon = KNOWN_CITY_CENTERS[c_lower]
+        else:
+            c_lat = float(row.latitude) if row.latitude is not None else None
+            c_lon = float(row.longitude) if row.longitude is not None else None
+        cities.append({
             "city": row.canonical_city.title(),
             "shop_count": int(row.shop_count),
-            "latitude": float(row.latitude) if row.latitude is not None else None,
-            "longitude": float(row.longitude) if row.longitude is not None else None,
-        }
-        for row in rows
-        if row.canonical_city and row.shop_count > 0
-    ]
+            "latitude": c_lat,
+            "longitude": c_lon,
+        })
+
     return ResponseEnvelope(
         data=cities,
         message=f"Found {len(cities)} serviceable cities." if cities else "No active cities found."
+    )
+
+
+@router.get("/merchants", response_model=ResponseEnvelope[List[dict]])
+async def list_merchants(
+    city: Optional[str] = Query(None),
+    lat: Optional[float] = Query(None),
+    lon: Optional[float] = Query(None),
+    radius_km: int = Query(50),
+    sector: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Fetches verified storefronts for a given city and/or proximity coordinates."""
+    query = (
+        select(Merchant)
+        .join(User, Merchant.user_id == User.id)
+        .where(
+            User.is_active == True,
+            Merchant.business_name.isnot(None),
+            func.length(func.trim(Merchant.business_name)) > 0,
+        )
+    )
+    if settings.ENVIRONMENT != "development":
+        query = query.where(Merchant.kyc_status == KycStatus.APPROVED)
+    else:
+        query = query.where(Merchant.kyc_status != KycStatus.REJECTED)
+
+    if city and city.strip():
+        query = query.where(func.lower(func.trim(Merchant.city)) == city.strip().lower())
+
+    if sector and sector.strip() and sector.strip().lower() != "all":
+        query = query.where(Merchant.sector == sector.strip().upper())
+
+    query = query.order_by(Merchant.created_at.desc())
+    res = await db.execute(query)
+    merchants = res.scalars().all()
+
+    shops = []
+    for m in merchants:
+        dist_m = 0
+        if lat is not None and lon is not None and m.latitude is not None and m.longitude is not None:
+            dist_m = int(calculate_haversine_distance(lat, lon, m.latitude, m.longitude))
+            if not city and dist_m > (radius_km * 1000):
+                continue
+
+        m_sector = getattr(m.sector, "value", str(m.sector))
+        shops.append({
+            "id": str(m.id),
+            "name": m.business_name,
+            "category": m_sector,
+            "locality": m.address_text.split(",")[0].strip() if m.address_text else (m.city or "Local"),
+            "city": m.city,
+            "address": m.address_text,
+            "latitude": m.latitude,
+            "longitude": m.longitude,
+            "distance_meters": dist_m,
+            "image": m.cover_url or get_default_cover_url(m_sector),
+            "logo": m.logo_url or get_default_logo_url(m_sector),
+            "description": m.description or f"Verified {m_sector} store in {m.city or 'your city'}",
+            "active_deal": "Instant Cashier Pass",
+            "is_verified": True,
+        })
+
+    if lat is not None and lon is not None:
+        shops.sort(key=lambda s: s["distance_meters"])
+
+    return ResponseEnvelope(
+        data=shops,
+        message=f"Found {len(shops)} shops." if shops else "No shops found."
     )
 
 

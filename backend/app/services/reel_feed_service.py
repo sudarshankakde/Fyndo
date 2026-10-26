@@ -40,10 +40,10 @@ MAX_FEED_CANDIDATES = 500
 FEED_CACHE_TTL_SECONDS = 45
 
 
-def _shared_cache_key(lat: float, lon: float, radius_km: int, sector: Optional[str], limit: int, cursor: Optional[str]) -> str:
+def _shared_cache_key(lat: float, lon: float, radius_km: int, sector: Optional[str], limit: int, cursor: Optional[str], city: Optional[str] = None) -> str:
     return (
         f"feed:{round(lat, 2)}:{round(lon, 2)}:{radius_km}:"
-        f"{(sector or 'ALL').upper()}:{limit}:{cursor or 'START'}"
+        f"{(city or 'NONE').upper()}:{(sector or 'ALL').upper()}:{limit}:{cursor or 'START'}"
     )
 
 
@@ -137,6 +137,7 @@ async def _query_feed(
     sector: Optional[str],
     limit: int,
     cursor: Optional[str],
+    city: Optional[str] = None,
 ) -> Tuple[List[ReelOut], Optional[str]]:
     lat_delta = radius_km / KM_PER_DEGREE_LAT
     lon_scale = max(math.cos(math.radians(lat)), 0.01)
@@ -149,11 +150,17 @@ async def _query_feed(
         .where(Reel.status == ReelStatus.APPROVED)
         .where(Reel.deleted_at.is_(None))
         .where(live_offer_clause())
-        .where(Merchant.latitude.between(lat - lat_delta, lat + lat_delta))
-        .where(Merchant.longitude.between(lon - lon_delta, lon + lon_delta))
-        .order_by(Reel.created_at.desc())
-        .limit(MAX_FEED_CANDIDATES)
     )
+
+    if city and city.strip():
+        stmt = stmt.where(func.lower(func.trim(Merchant.city)) == city.strip().lower())
+    else:
+        stmt = (
+            stmt.where(Merchant.latitude.between(lat - lat_delta, lat + lat_delta))
+            .where(Merchant.longitude.between(lon - lon_delta, lon + lon_delta))
+        )
+
+    stmt = stmt.order_by(Reel.created_at.desc()).limit(MAX_FEED_CANDIDATES)
     if sector:
         stmt = stmt.where(Merchant.sector == sector.strip().upper())
 
@@ -231,13 +238,14 @@ async def build_feed(
     lat: float,
     lon: float,
     radius_km: int,
+    city: Optional[str] = None,
     sector: Optional[str],
     limit: int,
     cursor: Optional[str],
     current_user: Optional[User],
 ) -> Tuple[List[ReelOut], Optional[str]]:
     """Returns a page of proximity-ordered reels served from a shared Redis cache."""
-    cache_key = _shared_cache_key(lat, lon, radius_km, sector, limit, cursor)
+    cache_key = _shared_cache_key(lat, lon, radius_km, sector, limit, cursor, city)
     cached = await _cache_get(cache_key)
     if cached is not None:
         items = [ReelOut.model_validate(entry) for entry in cached.get("items", [])]
@@ -245,7 +253,7 @@ async def build_feed(
         return items, cached.get("next_cursor")
 
     items, next_cursor = await _query_feed(
-        db, lat, lon, radius_km, sector, limit, cursor
+        db, lat, lon, radius_km, sector, limit, cursor, city
     )
     await _cache_set(
         cache_key,
