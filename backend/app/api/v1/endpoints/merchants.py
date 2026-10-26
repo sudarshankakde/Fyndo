@@ -1,9 +1,10 @@
 import uuid
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import select, delete, func, asc
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.v1.endpoints.auth import get_current_user, get_optional_user
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.security import get_password_hash
 from app.models.merchant import KycStatus, Merchant, MerchantOnboardingDraft, MerchantStaff, Sector
@@ -30,7 +31,6 @@ from app.schemas.merchant import (
     StaffOut,
     StaffUpdateRequest,
 )
-from sqlalchemy import delete
 
 router = APIRouter()
 
@@ -409,6 +409,44 @@ async def update_staff(
     await db.flush()
     await db.refresh(staff)
     return ResponseEnvelope(data=StaffOut.model_validate(staff), message="Staff member updated successfully.")
+
+
+@router.get("/merchants/cities", response_model=ResponseEnvelope[List[dict]])
+async def list_active_cities(
+    db: AsyncSession = Depends(get_db),
+):
+    """Returns unique eligible cities and their active shop counts directly via SQL from the merchants table, sorted ascending by count then city name."""
+    norm_city = func.trim(func.lower(Merchant.city))
+    query = (
+        select(
+            norm_city.label("canonical_city"),
+            func.count(func.distinct(Merchant.id)).label("shop_count")
+        )
+        .join(User, Merchant.user_id == User.id)
+        .where(
+            User.is_active == True,
+            Merchant.city.isnot(None),
+            func.length(func.trim(Merchant.city)) > 0,
+        )
+    )
+    if settings.ENVIRONMENT != "development":
+        query = query.where(Merchant.kyc_status == KycStatus.APPROVED)
+    else:
+        query = query.where(Merchant.kyc_status != KycStatus.REJECTED)
+
+    query = query.group_by(norm_city).order_by(asc("shop_count"), asc("canonical_city"))
+    res = await db.execute(query)
+    rows = res.all()
+
+    cities = [
+        {"city": row.canonical_city.title(), "shop_count": int(row.shop_count)}
+        for row in rows
+        if row.canonical_city and row.shop_count > 0
+    ]
+    return ResponseEnvelope(
+        data=cities,
+        message=f"Found {len(cities)} serviceable cities." if cities else "No active cities found."
+    )
 
 
 @router.get("/merchants/{merchant_id}", response_model=ResponseEnvelope[PublicMerchantOut])
