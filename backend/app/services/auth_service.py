@@ -215,6 +215,7 @@ class AuthService:
             preferred_language="en",
             merchant_id=merchant.id,
             business_name=merchant.business_name,
+            kyc_status=merchant.kyc_status.value if hasattr(merchant.kyc_status, "value") else str(merchant.kyc_status),
             can_upload_reels=can_upload,
             can_manage_content=can_manage,
         )
@@ -360,6 +361,7 @@ class AuthService:
                 preferred_language="en",
                 merchant_id=staff.merchant_id,
                 business_name=staff.merchant.business_name if staff.merchant else None,
+                kyc_status=staff.merchant.kyc_status.value if (staff.merchant and hasattr(staff.merchant.kyc_status, "value")) else (str(staff.merchant.kyc_status) if staff.merchant else None),
                 can_upload_reels=bool(staff.can_upload_reels),
                 can_manage_content=bool(getattr(staff, "can_manage_content", False)),
             )

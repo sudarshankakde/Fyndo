@@ -55,7 +55,15 @@ def _even(n: int) -> int:
 
 def resolve_source_path(url: str) -> str:
     """Maps a `/uploads/reels/<name>` URL to an absolute, sandboxed path."""
-    if not isinstance(url, str) or not url.startswith("/uploads/reels/"):
+    if not isinstance(url, str):
+        raise MediaValidationError("Please pick a video you just uploaded.", 400)
+
+    # Strip scheme and host if client passed a fully-qualified URL
+    if "://" in url:
+        from urllib.parse import urlparse
+        url = urlparse(url).path
+
+    if not url.startswith("/uploads/reels/"):
         raise MediaValidationError("Please pick a video you just uploaded.", 400)
     name = url[len("/uploads/reels/") :]
     if not name or "/" in name or "\\" in name or name.startswith("."):
@@ -109,6 +117,24 @@ def probe_source(path: str) -> SourceMeta:
 
 def validate_spec(spec: ReelEditRequest, meta: SourceMeta) -> float:
     """Returns the output length in seconds (post-trim) if the spec is valid."""
+    if spec.trim_start < 0 or spec.trim_start >= spec.trim_end:
+        raise MediaValidationError(
+            f"Invalid trim window: start ({spec.trim_start:.1f}s) must be before end ({spec.trim_end:.1f}s).",
+            400,
+        )
+
+    # Check overshoot against real source duration
+    if meta.duration:
+        if spec.trim_end > meta.duration:
+            overshoot = spec.trim_end - meta.duration
+            if overshoot <= _WINDOW_SLACK_SECONDS:
+                spec.trim_end = meta.duration
+            else:
+                raise MediaValidationError(
+                    f"The video is {meta.duration:.1f}s long; the chosen clip ends at {spec.trim_end:.1f}s.",
+                    400,
+                )
+
     length = spec.trim_end - spec.trim_start
     if length < settings.REEL_MIN_SECONDS - _WINDOW_SLACK_SECONDS:
         raise MediaValidationError(
@@ -118,8 +144,7 @@ def validate_spec(spec: ReelEditRequest, meta: SourceMeta) -> float:
         raise MediaValidationError(
             f"Reels can be up to {settings.REEL_MAX_SECONDS} seconds long.", 422,
         )
-    if meta.duration and spec.trim_end > meta.duration + _WINDOW_SLACK_SECONDS:
-        raise MediaValidationError("The chosen clip extends past the end of the video.", 400)
+
     if spec.cover_time is not None:
         offset = spec.cover_time
         if offset < 0 or offset > length + _WINDOW_SLACK_SECONDS:
@@ -164,14 +189,78 @@ def build_filter_graph(spec: ReelEditRequest, meta: SourceMeta) -> str:
     return ",".join(chain)
 
 
+def _resolve_music_path(track_name: Optional[str]) -> Optional[str]:
+    if not track_name or track_name.strip().lower() in ("none", "no music"):
+        return None
+    normalized = track_name.lower().strip()
+    alias_map = {
+        "trendy": "trendy.aac",
+        "trendy store pop": "trendy.aac",
+        "cafe": "cafe.aac",
+        "cafe lo-fi vibes": "cafe.aac",
+        "acoustic": "acoustic.aac",
+        "acoustic sunshine": "acoustic.aac",
+        "cinematic": "cinematic.aac",
+        "cinematic ambient": "cinematic.aac",
+    }
+    fname = alias_map.get(normalized)
+    if not fname:
+        for key, val in alias_map.items():
+            if key in normalized:
+                fname = val
+                break
+    if not fname:
+        return None
+    assets_dir = os.path.realpath(os.path.join(os.path.dirname(__file__), "..", "assets", "music"))
+    candidate = os.path.join(assets_dir, fname)
+    return candidate if os.path.exists(candidate) else None
+
+
 def build_ffmpeg_args(
     spec: ReelEditRequest, meta: SourceMeta, length: float, output_path: str,
 ) -> List[str]:
+    music_path = _resolve_music_path(getattr(spec, "music_track", None))
+    vf = build_filter_graph(spec, meta)
+
+    if music_path:
+        # Multi-track mixing: Input 0 is trimmed video, Input 1 is looping music
+        args = [
+            "ffmpeg", "-y", "-loglevel", "error", "-nostdin",
+            "-ss", f"{spec.trim_start:.3f}", "-i", meta.path,
+            "-stream_loop", "-1", "-i", music_path,
+            "-t", f"{length:.3f}",
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+            "-threads", str(max(1, settings.REEL_ENCODE_THREADS)),
+            "-r", "30", "-movflags", "+faststart",
+        ]
+        if spec.mute or not meta.has_audio:
+            # Silence original video audio, but KEEP background music track
+            args += [
+                "-vf", vf,
+                "-map", "0:v",
+                "-map", "1:a",
+                "-c:a", "aac", "-b:a", "128k", "-ac", "2",
+                "-shortest",
+                output_path,
+            ]
+        else:
+            # Mix original video audio (1.0) and music track (0.35)
+            complex_filter = f"[0:v]{vf}[v0];[0:a]volume=1.0[a0];[1:a]volume=0.35[a1];[a0][a1]amix=inputs=2:duration=first[aout]"
+            args += [
+                "-filter_complex", complex_filter,
+                "-map", "[v0]",
+                "-map", "[aout]",
+                "-c:a", "aac", "-b:a", "128k", "-ac", "2",
+                output_path,
+            ]
+        return args
+
+    # Standard single-track processing
     args = [
         "ffmpeg", "-y", "-loglevel", "error", "-nostdin",
         "-ss", f"{spec.trim_start:.3f}", "-i", meta.path,
         "-t", f"{length:.3f}",
-        "-vf", build_filter_graph(spec, meta),
+        "-vf", vf,
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
         "-threads", str(max(1, settings.REEL_ENCODE_THREADS)),
         "-r", "30", "-movflags", "+faststart",
@@ -231,6 +320,16 @@ def process_reel(spec: ReelEditRequest) -> dict:
     source = resolve_source_path(spec.source_url)
     meta = probe_source(source)
     length = validate_spec(spec, meta)
+
+    logger.info(
+        "process_reel: source=%s duration=%.2fs trim_start=%.2fs trim_end=%.2fs length=%.2fs cover_time=%s",
+        os.path.basename(source),
+        meta.duration,
+        spec.trim_start,
+        spec.trim_end,
+        length,
+        spec.cover_time,
+    )
 
     reels_dir = os.path.join(upload_root(), REELS_FOLDER)
     os.makedirs(reels_dir, exist_ok=True)

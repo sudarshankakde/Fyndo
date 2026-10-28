@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.api.v1.endpoints.auth import AuthContext, get_auth_context, get_current_user
+from app.api.v1.endpoints.auth import AuthContext, get_auth_context, get_current_user, get_merchant_scope, MerchantScope
 from app.api.v1.endpoints.merchant_context import MerchantContext, get_merchant_context
 from app.core.audit import audit_log
 from app.core.config import settings
@@ -19,12 +19,14 @@ from app.models.reel import AudioType, Reel, ReelStatus
 from app.models.user import User
 from app.schemas.common import ResponseEnvelope
 from app.schemas.reel import (
+    CouponFeedSummary,
     ReelCreateRequest,
     ReelExtendRequest,
     ReelExtendResponse,
     ReelManagementOut,
 )
 from app.services.cloudinary_service import CloudinaryService
+from app.services.merchant_engagement_service import coupon_counts_for_templates
 from app.services.reel_lifecycle_service import (
     OfferExtensionError,
     extend_offer,
@@ -217,28 +219,53 @@ async def extend_reel_validity(
 
 @router.get("/merchants/me/reels/expiring", response_model=ResponseEnvelope[List[ReelManagementOut]])
 async def list_expiring_reels(
-    ctx: MerchantContext = Depends(get_merchant_context),
+    scope: MerchantScope = Depends(get_merchant_scope),
     db: AsyncSession = Depends(get_db),
 ):
     """Reels whose offer has ended and that will be removed unless extended."""
-    merchant = ctx.merchant
     now = utcnow()
     reels = (
         await db.execute(
             select(Reel)
             .where(
-                Reel.merchant_id == merchant.id,
+                Reel.merchant_id == scope.merchant_id,
                 Reel.deleted_at.is_(None),
                 Reel.expires_at <= now,
                 Reel.grace_period_until > now,
             )
+            .options(selectinload(Reel.merchant), selectinload(Reel.coupon_template))
             .order_by(Reel.grace_period_until.asc())
         )
     ).scalars().all()
+
+    template_ids = [r.coupon_template.id for r in reels if r.coupon_template]
+    counts_map = await coupon_counts_for_templates(db, template_ids)
+
     items = []
     for reel in reels:
         out = ReelManagementOut.model_validate(reel)
         out.status = getattr(reel.status, "value", str(reel.status))
         out.is_expired = True
+        if reel.merchant:
+            out.merchant_name = reel.merchant.business_name
+            out.sector = getattr(reel.merchant.sector, "value", str(reel.merchant.sector))
+            out.city = reel.merchant.city
+            out.is_verified = bool(reel.merchant.kyc_status == KycStatus.APPROVED)
+        coupon = reel.coupon_template
+        if coupon:
+            claims, redemptions = counts_map.get(coupon.id, (0, 0))
+            out.claims_count = claims
+            out.redemptions_count = redemptions
+            if coupon.is_active:
+                out.coupon = CouponFeedSummary(
+                    id=coupon.id,
+                    title=coupon.title,
+                    discount_type=getattr(coupon.discount_type, "value", str(coupon.discount_type)),
+                    discount_value=float(coupon.discount_value),
+                    min_order_amount=float(coupon.min_order_amount),
+                    validity_days=coupon.validity_days,
+                    expires_at=coupon.expires_at,
+                    terms=coupon.terms,
+                )
         items.append(out)
     return ResponseEnvelope(data=items)

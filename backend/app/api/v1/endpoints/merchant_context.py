@@ -27,6 +27,14 @@ class MerchantContext:
         self.can_upload_reels = can_upload_reels
         self.can_manage_content = can_manage_content
 
+    @property
+    def merchant_id(self) -> uuid.UUID:
+        return self.merchant.id
+
+    @property
+    def staff_id(self) -> Optional[uuid.UUID]:
+        return self.staff.id if self.staff else None
+
 
 async def get_merchant_context(
     auth: AuthContext = Depends(get_auth_context),
@@ -34,11 +42,30 @@ async def get_merchant_context(
 ) -> MerchantContext:
     """Resolves merchant store context for either a store owner or authorized counter staff."""
     if auth.role == "ROLE_CASHIER":
+        claim_mid = auth.claims.get("merchant_id")
+        if not claim_mid:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token missing merchant scope."
+            )
+        try:
+            claim_mid_uuid = uuid.UUID(str(claim_mid))
+        except (ValueError, TypeError):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid merchant identifier in token."
+            )
+
         staff = await db.get(MerchantStaff, auth.subject_id)
         if not staff or not staff.is_active:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Staff session is inactive or invalid."
+                detail="Staff account inactive or not found."
+            )
+        if staff.merchant_id != claim_mid_uuid:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Staff POS credentials do not belong to the claimed merchant."
             )
         merchant = await db.get(Merchant, staff.merchant_id)
         if not merchant:

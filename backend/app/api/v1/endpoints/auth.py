@@ -9,6 +9,7 @@ from app.core.config import settings
 from app.core.context import set_user_id
 from app.core.database import get_db
 from app.core.security import decode_access_token
+from dataclasses import dataclass
 from app.models.merchant import Merchant, MerchantStaff
 from app.models.user import User
 from app.schemas.auth import (
@@ -66,6 +67,57 @@ async def get_auth_context(
         role=payload.get("role", "SHOPPER"),
         claims=payload
     )
+
+
+@dataclass
+class MerchantScope:
+    merchant_id: uuid.UUID
+    staff_id: Optional[uuid.UUID] = None
+
+
+async def get_merchant_scope(
+    auth: AuthContext = Depends(get_auth_context),
+    db: AsyncSession = Depends(get_db),
+) -> MerchantScope:
+    """Resolves merchant scope for either store owner or assigned cashier."""
+    if auth.role == "ROLE_CASHIER":
+        claim_mid = auth.claims.get("merchant_id")
+        if not claim_mid:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token missing merchant scope."
+            )
+        try:
+            claim_mid_uuid = uuid.UUID(str(claim_mid))
+        except (ValueError, TypeError):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid merchant identifier in token."
+            )
+
+        staff_res = await db.execute(select(MerchantStaff).where(MerchantStaff.id == auth.subject_id))
+        staff = staff_res.scalars().first()
+        if not staff or not staff.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Staff account inactive or not found."
+            )
+        if staff.merchant_id != claim_mid_uuid:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Staff POS credentials do not belong to the claimed merchant."
+            )
+        return MerchantScope(merchant_id=staff.merchant_id, staff_id=staff.id)
+
+    # Owner token
+    result = await db.execute(select(Merchant).where(Merchant.user_id == auth.subject_id))
+    merchant = result.scalars().first()
+    if not merchant:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Merchant profile not found for this user."
+        )
+    return MerchantScope(merchant_id=merchant.id, staff_id=None)
 
 
 async def get_current_user(

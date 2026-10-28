@@ -3,10 +3,11 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Tuple
 
-from sqlalchemy import func, select, update
+from sqlalchemy import case, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.coupon import CouponStatus, UserCoupon
 from app.models.merchant import Merchant
 from app.models.merchant_engagement import MerchantCallClick, MerchantFollower, MerchantRating
 from app.models.reel import Reel
@@ -185,3 +186,27 @@ async def merchant_insights(db: AsyncSession, merchant: Merchant) -> Dict:
         "rating_average": summary["average"],
         "rating_count": summary["count"],
     }
+
+
+async def coupon_counts_for_templates(
+    db: AsyncSession, template_ids: List[uuid.UUID]
+) -> Dict[uuid.UUID, Tuple[int, int]]:
+    """Batched counts of (claims, redemptions) keyed by coupon_template_id."""
+    if not template_ids:
+        return {}
+    stmt = (
+        select(
+            UserCoupon.coupon_template_id,
+            func.count(UserCoupon.id),
+            func.coalesce(
+                func.sum(
+                    case((UserCoupon.status == CouponStatus.REDEEMED, 1), else_=0)
+                ),
+                0,
+            ),
+        )
+        .where(UserCoupon.coupon_template_id.in_(template_ids))
+        .group_by(UserCoupon.coupon_template_id)
+    )
+    rows = (await db.execute(stmt)).all()
+    return {row[0]: (int(row[1]), int(row[2])) for row in rows}

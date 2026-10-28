@@ -54,6 +54,8 @@ class MerchantFeedSummary(BaseModel):
     sector: str
     address: str
     distance_meters: int
+    logo_url: Optional[str] = None
+    is_verified: bool = False
 
     model_config = {"from_attributes": True}
 
@@ -66,6 +68,7 @@ class CouponFeedSummary(BaseModel):
     min_order_amount: float
     validity_days: int
     expires_at: Optional[datetime] = None
+    terms: Optional[str] = None
 
     model_config = {"from_attributes": True}
 
@@ -83,6 +86,7 @@ class ReelOut(BaseModel):
     is_bookmarked: bool = False
     allow_comments: bool = True
     comments_count: int = 0
+    status: Optional[str] = None
     merchant: MerchantFeedSummary
     coupon: Optional[CouponFeedSummary] = None
 
@@ -110,6 +114,7 @@ class SavedReelOut(BaseModel):
     discount_type: Optional[str] = None
     discount_value: Optional[float] = None
     saved_at: datetime
+    is_verified: bool = False
 
 
 
@@ -149,11 +154,14 @@ class ReelManagementOut(BaseModel):
     grace_period_until: Optional[datetime] = None
     is_expired: bool = False
     created_by_staff_id: Optional[uuid.UUID] = None
+    claims_count: int = 0
+    redemptions_count: int = 0
 
     # Merchant summary for management context
     merchant_name: Optional[str] = None
     sector: Optional[str] = None
     city: Optional[str] = None
+    is_verified: bool = False
     coupon: Optional[CouponFeedSummary] = None
 
     model_config = {"from_attributes": True}

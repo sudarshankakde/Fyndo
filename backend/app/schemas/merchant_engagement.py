@@ -40,6 +40,7 @@ class FollowedMerchantOut(BaseModel):
     logo_url: Optional[str] = None
     cover_url: Optional[str] = None
     followed_at: datetime
+    is_verified: bool = False
 
 
 

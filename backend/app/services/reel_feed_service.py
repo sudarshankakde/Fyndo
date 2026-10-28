@@ -24,11 +24,12 @@ from sqlalchemy.orm import selectinload
 
 from app.core.redis import get_redis_client
 from app.models.coupon import CouponTemplate
-from app.models.merchant import Merchant
+from app.models.merchant import KycStatus, Merchant
 from app.models.reel import Reel, ReelStatus
 from app.models.reel_engagement import ReelComment, ReelLike, ReelBookmark
 from app.models.user import User
 from app.schemas.reel import CouponFeedSummary, MerchantFeedSummary, ReelOut
+from app.services.category_assets import get_default_logo_url
 from app.services.cloudinary_service import CloudinaryService
 from app.services.reel_lifecycle_service import live_offer_clause
 from app.utils.geo import calculate_haversine_distance
@@ -40,10 +41,20 @@ MAX_FEED_CANDIDATES = 500
 FEED_CACHE_TTL_SECONDS = 45
 
 
-def _shared_cache_key(lat: float, lon: float, radius_km: int, sector: Optional[str], limit: int, cursor: Optional[str], city: Optional[str] = None) -> str:
+def _shared_cache_key(
+    lat: float,
+    lon: float,
+    radius_km: int,
+    sector: Optional[str],
+    limit: int,
+    cursor: Optional[str],
+    city: Optional[str] = None,
+    merchant_id: Optional[uuid.UUID] = None,
+) -> str:
     return (
         f"feed:{round(lat, 2)}:{round(lon, 2)}:{radius_km}:"
-        f"{(city or 'NONE').upper()}:{(sector or 'ALL').upper()}:{limit}:{cursor or 'START'}"
+        f"{(city or 'NONE').upper()}:{(sector or 'ALL').upper()}:"
+        f"{merchant_id or 'ALL'}:{limit}:{cursor or 'START'}"
     )
 
 
@@ -101,6 +112,7 @@ def _coupon_summary(reel: Reel) -> Optional[CouponFeedSummary]:
         min_order_amount=float(template.min_order_amount),
         validity_days=template.validity_days,
         expires_at=template.expires_at,
+        terms=template.terms,
     )
 
 
@@ -150,6 +162,7 @@ async def _query_feed(
     limit: int,
     cursor: Optional[str],
     city: Optional[str] = None,
+    merchant_id: Optional[uuid.UUID] = None,
 ) -> Tuple[List[ReelOut], Optional[str]]:
     lat_delta = radius_km / KM_PER_DEGREE_LAT
     lon_scale = max(math.cos(math.radians(lat)), 0.01)
@@ -164,7 +177,9 @@ async def _query_feed(
         .where(live_offer_clause())
     )
 
-    if city and city.strip():
+    if merchant_id:
+        stmt = stmt.where(Reel.merchant_id == merchant_id)
+    elif city and city.strip():
         stmt = stmt.where(func.lower(func.trim(Merchant.city)) == city.strip().lower())
     else:
         stmt = (
@@ -187,7 +202,7 @@ async def _query_feed(
         distance_m = calculate_haversine_distance(
             lat, lon, merchant.latitude, merchant.longitude
         )
-        if distance_m <= radius_meters:
+        if merchant_id or distance_m <= radius_meters:
             scored.append((distance_m, str(reel.id), reel, merchant))
 
     scored.sort(key=lambda row: (row[0], row[1]))
@@ -231,6 +246,8 @@ async def _query_feed(
                     sector=merchant_sector,
                     address=merchant.address_text,
                     distance_meters=distance_m,
+                    logo_url=merchant.logo_url or get_default_logo_url(merchant_sector),
+                    is_verified=bool(merchant.kyc_status == KycStatus.APPROVED),
                 ),
                 coupon=_coupon_summary(reel),
             )
@@ -254,10 +271,11 @@ async def build_feed(
     sector: Optional[str],
     limit: int,
     cursor: Optional[str],
+    merchant_id: Optional[uuid.UUID] = None,
     current_user: Optional[User],
 ) -> Tuple[List[ReelOut], Optional[str]]:
     """Returns a page of proximity-ordered reels served from a shared Redis cache."""
-    cache_key = _shared_cache_key(lat, lon, radius_km, sector, limit, cursor, city)
+    cache_key = _shared_cache_key(lat, lon, radius_km, sector, limit, cursor, city, merchant_id)
     cached = await _cache_get(cache_key)
     if cached is not None:
         items = [ReelOut.model_validate(entry) for entry in cached.get("items", [])]
@@ -265,7 +283,7 @@ async def build_feed(
         return items, cached.get("next_cursor")
 
     items, next_cursor = await _query_feed(
-        db, lat, lon, radius_km, sector, limit, cursor, city
+        db, lat, lon, radius_km, sector, limit, cursor, city, merchant_id
     )
     await _cache_set(
         cache_key,
