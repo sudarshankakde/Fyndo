@@ -24,7 +24,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.redis import get_redis_client
 from app.models.coupon import CouponTemplate
-from app.models.merchant import Merchant
+from app.models.merchant import KycStatus, Merchant
 from app.models.reel import Reel, ReelStatus
 from app.models.reel_engagement import ReelComment, ReelLike, ReelBookmark
 from app.models.user import User
@@ -247,6 +247,7 @@ async def _query_feed(
                     address=merchant.address_text,
                     distance_meters=distance_m,
                     logo_url=merchant.logo_url or get_default_logo_url(merchant_sector),
+                    is_verified=bool(merchant.kyc_status == KycStatus.APPROVED),
                 ),
                 coupon=_coupon_summary(reel),
             )

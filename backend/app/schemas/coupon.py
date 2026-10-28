@@ -30,6 +30,7 @@ class RedemptionVerifyResponse(BaseModel):
     status: str
     discount_applied: float
     customer_name: Optional[str] = None
+    customer_phone: Optional[str] = None
     coupon_title: str
     timestamp: datetime
     bill_amount: float
@@ -49,6 +50,7 @@ class RedemptionHistoryItem(BaseModel):
     coupon_title: str
     merchant_id: uuid.UUID
     merchant_name: str
+    merchant_is_verified: bool = False
     staff_name: Optional[str] = None
     discount_type: str
     bill_amount: float
@@ -81,6 +83,7 @@ class UserCouponWalletItem(BaseModel):
     validity_days: int
     merchant_id: Optional[uuid.UUID] = None
     merchant_name: str
+    merchant_is_verified: bool = False
     merchant_address: str
     merchant_category: Optional[str] = None
     merchant_logo_url: Optional[str] = None

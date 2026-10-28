@@ -107,6 +107,7 @@ async def list_followed_merchants(
                 logo_url=merchant.logo_url,
                 cover_url=merchant.cover_url,
                 followed_at=followed_at,
+                is_verified=bool(merchant.kyc_status == KycStatus.APPROVED),
             )
             for merchant, followed_at in rows
         ]

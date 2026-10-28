@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.api.v1.endpoints.auth import AuthContext, get_auth_context, get_current_user
+from app.api.v1.endpoints.auth import AuthContext, get_auth_context, get_current_user, get_merchant_scope, MerchantScope
 from app.core.audit import audit_log
 from app.core.config import settings
 from app.core.database import get_db
@@ -218,19 +218,16 @@ async def extend_reel_validity(
 
 @router.get("/merchants/me/reels/expiring", response_model=ResponseEnvelope[List[ReelManagementOut]])
 async def list_expiring_reels(
-    current_user: User = Depends(get_current_user),
+    scope: MerchantScope = Depends(get_merchant_scope),
     db: AsyncSession = Depends(get_db),
 ):
     """Reels whose offer has ended and that will be removed unless extended."""
-    merchant = await _merchant_for(db, current_user)
-    if not merchant:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Merchant profile not found.")
     now = utcnow()
     reels = (
         await db.execute(
             select(Reel)
             .where(
-                Reel.merchant_id == merchant.id,
+                Reel.merchant_id == scope.merchant_id,
                 Reel.deleted_at.is_(None),
                 Reel.expires_at <= now,
                 Reel.grace_period_until > now,
@@ -252,6 +249,7 @@ async def list_expiring_reels(
             out.merchant_name = reel.merchant.business_name
             out.sector = getattr(reel.merchant.sector, "value", str(reel.merchant.sector))
             out.city = reel.merchant.city
+            out.is_verified = bool(reel.merchant.kyc_status == KycStatus.APPROVED)
         coupon = reel.coupon_template
         if coupon:
             claims, redemptions = counts_map.get(coupon.id, (0, 0))

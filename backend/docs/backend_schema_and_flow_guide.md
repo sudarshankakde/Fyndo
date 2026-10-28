@@ -731,3 +731,41 @@ backend/app/
 └── utils/
     └── geo.py                    # Haversine distance calculator
 ```
+
+---
+
+## 4. Verified Badge Standard & Cashier API Specification
+
+### 4.1 Verified Store Standard
+A store is verified if and only if:
+$$\text{is\_verified} \iff \text{merchant.kyc\_status} == \text{KycStatus.APPROVED}$$
+
+There is no secondary verification flag. Every endpoint returning store metadata includes a boolean verification status (`default = False`):
+- **Reel Feed & Discovery (`GET /api/v1/reels/feed`)**: `MerchantFeedSummary.is_verified`
+- **Reel Detail (`GET /api/v1/reels/{id}`)**: `MerchantFeedSummary.is_verified`
+- **Merchant Reels (`GET /api/v1/reels/mine`)**: `MerchantFeedSummary.is_verified`
+- **Saved Reels (`GET /api/v1/reels/saved`)**: `SavedReelOut.is_verified`
+- **Public Storefront (`GET /api/v1/merchants/{id}`)**: `PublicMerchantOut.is_verified` (relaxed query to `kyc_status != REJECTED`, allowing pending stores to view profile with `is_verified: false` without 404)
+- **Store Directory (`GET /api/v1/merchants`)**: `is_verified: bool` computed from real `kyc_status`
+- **Followed Stores (`GET /api/v1/merchants/following`)**: `is_verified: bool`
+- **Shopper Coupon Wallet (`GET /api/v1/coupons/wallet`)**: `UserCouponWalletItem.merchant_is_verified`
+- **Shopper Redemption History (`GET /api/v1/redemptions/history`)**: `RedemptionHistoryItem.merchant_is_verified`
+
+### 4.2 Cashier-Accessible Routes & Scoping
+Cashier terminals authenticate via `POST /api/v1/auth/staff-login` returning `role: ROLE_CASHIER` and `merchant_id`. The dependency `get_merchant_scope` resolves the store context with `staff_id` restriction:
+
+1. **`GET /api/v1/merchants/analytics`**:
+   - Authorized for Store Owners and Cashier Staff.
+   - For Cashiers: redemptions and revenue metrics are scoped by `RedemptionsLedger.staff_id == current_staff.id`.
+   - Response includes `unique_customers: int` (distinct customer user count).
+2. **`GET /api/v1/reels/mine`**:
+   - Read-only access for cashier staff belonging to the merchant.
+3. **`GET /api/v1/merchants/me/reels/expiring`**:
+   - Read-only access for cashier staff to inspect promotions expiring within 48 hours.
+4. **`GET /api/v1/auth/me`**:
+   - Supports Cashier JWT sessions, returning `can_upload_reels`, `kyc_status`, `merchant_id`, and `business_name`.
+
+### 4.3 POS Redemption & Geofence Verification
+- **`POST /api/v1/redemptions/verify`** (QR scan) & **`POST /api/v1/redemptions/verify-pin`** (Manual TOTP / Backup PIN):
+  - Return `customer_phone: Optional[str]` in success response for counter receipt audit.
+  - `cashier_lat` and `cashier_lon` are **optional** floating-point parameters. If client device coordinates are unavailable or permission is denied, geofence radius check is skipped cleanly without failing redemption.

@@ -55,6 +55,7 @@ class MerchantFeedSummary(BaseModel):
     address: str
     distance_meters: int
     logo_url: Optional[str] = None
+    is_verified: bool = False
 
     model_config = {"from_attributes": True}
 
@@ -113,6 +114,7 @@ class SavedReelOut(BaseModel):
     discount_type: Optional[str] = None
     discount_value: Optional[float] = None
     saved_at: datetime
+    is_verified: bool = False
 
 
 
@@ -159,6 +161,7 @@ class ReelManagementOut(BaseModel):
     merchant_name: Optional[str] = None
     sector: Optional[str] = None
     city: Optional[str] = None
+    is_verified: bool = False
     coupon: Optional[CouponFeedSummary] = None
 
     model_config = {"from_attributes": True}

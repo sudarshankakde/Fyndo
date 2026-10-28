@@ -49,6 +49,7 @@ class UserOut(BaseModel):
     merchant_id: Optional[uuid.UUID] = None
     business_name: Optional[str] = None
     kyc_status: Optional[str] = None
+    can_upload_reels: Optional[bool] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
     city: Optional[str] = None

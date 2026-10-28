@@ -9,6 +9,7 @@ from app.api.v1.endpoints.auth import get_current_user
 from app.core.audit import audit_log
 from app.core.database import get_db
 from app.models.coupon import CouponStatus, CouponTemplate, UserCoupon
+from app.models.merchant import KycStatus
 from app.models.notification import NotificationCategory
 from app.models.user import User
 from app.schemas.common import ResponseEnvelope
@@ -76,6 +77,7 @@ async def get_user_wallet(
                 validity_days=tmpl.validity_days if tmpl else 0,
                 merchant_id=merch.id if merch else None,
                 merchant_name=merch.business_name if merch else "Fyndo Partner",
+                merchant_is_verified=bool(merch and merch.kyc_status == KycStatus.APPROVED),
                 merchant_address=merch.address_text if merch else "",
                 merchant_category=(merch.sector.value if hasattr(merch.sector, "value") else str(merch.sector)) if merch and merch.sector else None,
                 merchant_logo_url=merch.logo_url if merch else None,

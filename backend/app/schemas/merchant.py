@@ -148,6 +148,7 @@ class PublicMerchantOut(BaseModel):
     logo_url: Optional[str] = None
     followers_count: int = 0
     is_following: bool = False
+    is_verified: bool = False
     rating_average: float = 0.0
     rating_count: int = 0
     phone: Optional[str] = None

@@ -532,9 +532,9 @@ async def list_merchants(
             "distance_meters": dist_m,
             "image": m.cover_url or get_default_cover_url(m_sector),
             "logo": m.logo_url or get_default_logo_url(m_sector),
-            "description": m.description or f"Verified {m_sector} store in {m.city or 'your city'}",
+            "description": m.description or f"{m_sector} store in {m.city or 'your city'}",
             "active_deal": "Instant Cashier Pass",
-            "is_verified": True,
+            "is_verified": bool(m.kyc_status == KycStatus.APPROVED),
         })
 
     if lat is not None and lon is not None:
@@ -555,7 +555,7 @@ async def get_public_merchant(
     res = await db.execute(
         select(Merchant).where(
             Merchant.id == merchant_id,
-            Merchant.kyc_status == KycStatus.APPROVED,
+            Merchant.kyc_status != KycStatus.REJECTED,
         )
     )
     merchant = res.scalars().first()
@@ -580,6 +580,7 @@ async def get_public_merchant(
             logo_url=merchant.logo_url,
             followers_count=await engagement.followers_count(db, merchant.id),
             is_following=await engagement.is_following(db, merchant.id, current_user),
+            is_verified=bool(merchant.kyc_status == KycStatus.APPROVED),
             rating_average=ratings["average"],
             rating_count=ratings["count"],
             phone=phone,

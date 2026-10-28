@@ -8,13 +8,13 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from app.api.v1.endpoints.auth import get_current_user
+from app.api.v1.endpoints.auth import get_current_user, get_merchant_scope, MerchantScope
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.redis import get_redis_client
 from app.core.security import decode_access_token
 from app.models.coupon import CouponStatus, CouponTemplate, DiscountType, RedemptionsLedger, UserCoupon
-from app.models.merchant import Merchant, MerchantStaff
+from app.models.merchant import KycStatus, Merchant, MerchantStaff
 from app.models.reel import Reel
 from app.models.user import User
 from app.schemas.common import ResponseEnvelope
@@ -168,6 +168,7 @@ async def verify_and_redeem(
             status="VERIFIED_AND_REDEEMED",
             discount_applied=float(ledger_entry.discount_applied),
             customer_name=customer_name,
+            customer_phone=coupon.user.phone if coupon.user else None,
             coupon_title=coupon.template.title,
             timestamp=now,
             bill_amount=request.bill_amount,
@@ -260,6 +261,7 @@ async def verify_backup_pin(
             status="VERIFIED_AND_REDEEMED",
             discount_applied=discount,
             customer_name=coupon.user.full_name or coupon.user.phone,
+            customer_phone=coupon.user.phone if coupon.user else None,
             coupon_title=coupon.template.title,
             timestamp=now,
             bill_amount=request.bill_amount,
@@ -312,26 +314,39 @@ async def merchant_redemption_history(
 async def merchant_analytics(
     from_date: Optional[datetime] = None,
     to_date: Optional[datetime] = None,
-    current_user: User = Depends(get_current_user),
+    scope: MerchantScope = Depends(get_merchant_scope),
     db: AsyncSession = Depends(get_db),
 ):
-    merchant_res = await db.execute(select(Merchant).where(Merchant.user_id == current_user.id))
-    merchant = merchant_res.scalars().first()
-    if not merchant:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only merchants can view analytics.")
-
-    stmt = select(RedemptionsLedger).where(RedemptionsLedger.merchant_id == merchant.id)
+    stmt = select(RedemptionsLedger).where(RedemptionsLedger.merchant_id == scope.merchant_id)
+    if scope.staff_id is not None:
+        stmt = stmt.where(RedemptionsLedger.staff_id == scope.staff_id)
     if from_date:
         stmt = stmt.where(RedemptionsLedger.created_at >= from_date)
     if to_date:
         stmt = stmt.where(RedemptionsLedger.created_at <= to_date)
     redemptions = (await db.execute(stmt)).scalars().all()
-    reels_count = (await db.execute(select(func.count(Reel.id)).where(Reel.merchant_id == merchant.id, Reel.deleted_at.is_(None)))).scalar() or 0
+    reels_count = (await db.execute(select(func.count(Reel.id)).where(Reel.merchant_id == scope.merchant_id, Reel.deleted_at.is_(None)))).scalar() or 0
+
+    unique_cust_stmt = (
+        select(func.count(func.distinct(UserCoupon.user_id)))
+        .select_from(RedemptionsLedger)
+        .join(UserCoupon, RedemptionsLedger.user_coupon_id == UserCoupon.id)
+        .where(RedemptionsLedger.merchant_id == scope.merchant_id)
+    )
+    if scope.staff_id is not None:
+        unique_cust_stmt = unique_cust_stmt.where(RedemptionsLedger.staff_id == scope.staff_id)
+    if from_date:
+        unique_cust_stmt = unique_cust_stmt.where(RedemptionsLedger.created_at >= from_date)
+    if to_date:
+        unique_cust_stmt = unique_cust_stmt.where(RedemptionsLedger.created_at <= to_date)
+    unique_customers = (await db.execute(unique_cust_stmt)).scalar() or 0
+
     return ResponseEnvelope(data={
-        "merchant_id": str(merchant.id),
+        "merchant_id": str(scope.merchant_id),
         "redemption_count": len(redemptions),
         "total_bill_amount": round(sum(float(item.bill_amount) for item in redemptions), 2),
         "total_discount_applied": round(sum(float(item.discount_applied) for item in redemptions), 2),
+        "unique_customers": int(unique_customers),
         "reels_count": reels_count,
         "from_date": from_date,
         "to_date": to_date,
@@ -360,6 +375,7 @@ async def shopper_redemption_history(
             coupon_title=template.title,
             merchant_id=merchant.id,
             merchant_name=merchant.business_name,
+            merchant_is_verified=bool(merchant.kyc_status == KycStatus.APPROVED),
             staff_name=staff.staff_name if staff else None,
             discount_type=template.discount_type.value if hasattr(template.discount_type, "value") else str(template.discount_type),
             bill_amount=float(ledger.bill_amount),

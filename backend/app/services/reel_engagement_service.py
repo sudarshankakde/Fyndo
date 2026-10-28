@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.privacy import mask_phone
 from app.core.redis import get_redis_client
 from app.models.coupon import CouponTemplate
-from app.models.merchant import Merchant
+from app.models.merchant import KycStatus, Merchant
 from app.models.reel import Reel, ReelStatus, ReelView
 from app.models.reel_engagement import ReelComment, ReelLike, ReelBookmark
 from app.models.user import User, UserRole
@@ -322,6 +322,7 @@ async def list_saved_reels(db: AsyncSession, *, user: User) -> List[SavedReelOut
                 discount_type=coupon.discount_type.value if coupon and hasattr(coupon.discount_type, "value") else (str(coupon.discount_type) if coupon else None),
                 discount_value=float(coupon.discount_value) if coupon else None,
                 saved_at=saved_at,
+                is_verified=bool(merchant.kyc_status == KycStatus.APPROVED),
             )
         )
     return out

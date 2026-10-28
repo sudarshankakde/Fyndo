@@ -6,11 +6,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.api.v1.endpoints.auth import get_current_user, get_optional_user
+from app.api.v1.endpoints.auth import get_current_user, get_merchant_scope, get_optional_user, MerchantScope
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.rate_limit import rate_limit
-from app.models.merchant import Merchant, MerchantStaff
+from app.models.merchant import KycStatus, Merchant, MerchantStaff
 from app.models.reel import Reel, ReelStatus
 from app.models.reel_engagement import ReelComment, ReelLike
 from app.models.user import User
@@ -90,19 +90,13 @@ async def get_proximity_feed(
 
 @router.get("/reels/mine", response_model=ResponseEnvelope[list[ReelManagementOut]])
 async def list_my_reels(
-    current_user: User = Depends(get_current_user),
+    scope: MerchantScope = Depends(get_merchant_scope),
     db: AsyncSession = Depends(get_db),
 ):
-    merchant = await _merchant_for(db, current_user)
-    if not merchant:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Merchant profile not found."
-        )
-
     reels = (
         await db.execute(
             select(Reel)
-            .where(Reel.merchant_id == merchant.id, Reel.deleted_at.is_(None))
+            .where(Reel.merchant_id == scope.merchant_id, Reel.deleted_at.is_(None))
             .options(selectinload(Reel.merchant), selectinload(Reel.coupon_template))
             .order_by(Reel.created_at.desc())
             .limit(200)
@@ -121,6 +115,7 @@ async def list_my_reels(
             out.merchant_name = reel.merchant.business_name
             out.sector = getattr(reel.merchant.sector, "value", str(reel.merchant.sector))
             out.city = reel.merchant.city
+            out.is_verified = bool(reel.merchant.kyc_status == KycStatus.APPROVED)
         coupon = reel.coupon_template
         if coupon:
             claims, redemptions = counts_map.get(coupon.id, (0, 0))
@@ -214,6 +209,7 @@ async def get_reel(
             address=merchant_obj.address_text,
             distance_meters=0,
             logo_url=merchant_obj.logo_url or get_default_logo_url(merchant_sector),
+            is_verified=bool(merchant_obj.kyc_status == KycStatus.APPROVED),
         ),
         coupon=coupon_summary,
     )
