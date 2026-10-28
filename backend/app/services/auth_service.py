@@ -182,10 +182,18 @@ class AuthService:
                 detail="The 6-digit staff PIN entered is incorrect."
             )
 
+        can_upload = bool(staff.can_upload_reels)
+        can_manage = bool(getattr(staff, "can_manage_content", False))
+
         token = create_access_token(
             subject=str(staff.id),
             role="ROLE_CASHIER",
-            extra_claims={"merchant_id": str(merchant.id), "business_name": merchant.business_name}
+            extra_claims={
+                "merchant_id": str(merchant.id),
+                "business_name": merchant.business_name,
+                "can_upload_reels": can_upload,
+                "can_manage_content": can_manage,
+            }
         )
         ref_token = create_refresh_token(
             subject=str(staff.id),
@@ -193,6 +201,8 @@ class AuthService:
             extra_claims={
                 "merchant_id": str(merchant.id),
                 "business_name": merchant.business_name,
+                "can_upload_reels": can_upload,
+                "can_manage_content": can_manage,
             },
         )
         await SessionService.store_refresh_session(ref_token, str(staff.id), "ROLE_CASHIER")
@@ -204,7 +214,9 @@ class AuthService:
             role="ROLE_CASHIER",
             preferred_language="en",
             merchant_id=merchant.id,
-            business_name=merchant.business_name
+            business_name=merchant.business_name,
+            can_upload_reels=can_upload,
+            can_manage_content=can_manage,
         )
 
         return StaffLoginResponse(
@@ -214,6 +226,8 @@ class AuthService:
             staff_name=staff.staff_name,
             merchant_id=merchant.id,
             business_name=merchant.business_name,
+            can_upload_reels=can_upload,
+            can_manage_content=can_manage,
             user=user_out
         )
 
@@ -345,7 +359,9 @@ class AuthService:
                 role="ROLE_CASHIER",
                 preferred_language="en",
                 merchant_id=staff.merchant_id,
-                business_name=staff.merchant.business_name if staff.merchant else None
+                business_name=staff.merchant.business_name if staff.merchant else None,
+                can_upload_reels=bool(staff.can_upload_reels),
+                can_manage_content=bool(getattr(staff, "can_manage_content", False)),
             )
 
         res = await db.execute(select(User).where(User.id == subject_id))

@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.api.v1.endpoints.auth import get_current_user, get_optional_user
+from app.api.v1.endpoints.merchant_context import MerchantContext, get_merchant_context
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.rate_limit import rate_limit
@@ -85,14 +86,10 @@ async def get_proximity_feed(
 
 @router.get("/reels/mine", response_model=ResponseEnvelope[list[ReelManagementOut]])
 async def list_my_reels(
-    current_user: User = Depends(get_current_user),
+    ctx: MerchantContext = Depends(get_merchant_context),
     db: AsyncSession = Depends(get_db),
 ):
-    merchant = await _merchant_for(db, current_user)
-    if not merchant:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Merchant profile not found."
-        )
+    merchant = ctx.merchant
 
     reels = (
         await db.execute(
@@ -189,14 +186,15 @@ async def get_reel(reel_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
 async def update_reel(
     reel_id: uuid.UUID,
     request: ReelUpdateRequest,
-    current_user: User = Depends(get_current_user),
+    ctx: MerchantContext = Depends(get_merchant_context),
     db: AsyncSession = Depends(get_db),
 ):
-    merchant = await _merchant_for(db, current_user)
-    if not merchant:
+    if ctx.is_staff and not ctx.can_manage_content:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Only merchants can update reels."
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Staff permission 'Manage Content' is required to update reels."
         )
+    merchant = ctx.merchant
     reel = (
         await db.execute(
             select(Reel).where(Reel.id == reel_id, Reel.merchant_id == merchant.id)
@@ -221,14 +219,15 @@ async def update_reel(
 @router.delete("/reels/{reel_id}", response_model=ResponseEnvelope[dict])
 async def delete_reel(
     reel_id: uuid.UUID,
-    current_user: User = Depends(get_current_user),
+    ctx: MerchantContext = Depends(get_merchant_context),
     db: AsyncSession = Depends(get_db),
 ):
-    merchant = await _merchant_for(db, current_user)
-    if not merchant:
+    if ctx.is_staff and not ctx.can_manage_content:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Only merchants can delete reels."
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Staff permission 'Manage Content' is required to delete reels."
         )
+    merchant = ctx.merchant
     reel = (
         await db.execute(
             select(Reel).where(Reel.id == reel_id, Reel.merchant_id == merchant.id)

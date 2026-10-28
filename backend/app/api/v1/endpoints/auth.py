@@ -9,6 +9,7 @@ from app.core.config import settings
 from app.core.context import set_user_id
 from app.core.database import get_db
 from app.core.security import decode_access_token
+from app.models.merchant import Merchant, MerchantStaff
 from app.models.user import User
 from app.schemas.auth import (
     AdminLoginRequest,

@@ -95,6 +95,7 @@ _COMPAT_COLUMNS = {
     },
     "merchant_staff": {
         "can_upload_reels": ("BOOLEAN NOT NULL DEFAULT 0", "BOOLEAN NOT NULL DEFAULT FALSE"),
+        "can_manage_content": ("BOOLEAN NOT NULL DEFAULT 0", "BOOLEAN NOT NULL DEFAULT FALSE"),
     },
     "reels": {
         "video_hls_url": ("VARCHAR(500) NULL", "VARCHAR(500) NULL"),

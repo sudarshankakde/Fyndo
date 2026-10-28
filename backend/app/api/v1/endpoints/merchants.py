@@ -5,6 +5,7 @@ from sqlalchemy import select, delete, func, asc, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.utils.geo import calculate_haversine_distance
 from app.api.v1.endpoints.auth import get_current_user, get_optional_user
+from app.api.v1.endpoints.merchant_context import MerchantContext, get_merchant_context
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.security import get_password_hash
@@ -219,16 +220,10 @@ async def onboard_merchant(
 
 @router.get("/merchants/profile", response_model=ResponseEnvelope[MerchantOut])
 async def get_merchant_profile(
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    ctx: MerchantContext = Depends(get_merchant_context),
 ):
-    """Retrieves current user's merchant profile."""
-    res = await db.execute(select(Merchant).where(Merchant.user_id == current_user.id))
-    merchant = res.scalars().first()
-    if not merchant:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Merchant profile not found.")
-
-    return ResponseEnvelope(data=MerchantOut.model_validate(merchant))
+    """Retrieves current store's merchant profile (accessible by store owner and counter staff)."""
+    return ResponseEnvelope(data=MerchantOut.model_validate(ctx.merchant))
 
 
 @router.get("/merchants/categories", response_model=ResponseEnvelope[List[CategoryMetaOut]])
@@ -337,19 +332,26 @@ async def create_staff(
     if not merchant:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only merchants can configure staff.")
 
-    # Staff records have an explicit lifecycle; use PATCH to update an existing cashier.
-    staff_res = await db.execute(select(MerchantStaff).where(MerchantStaff.merchant_id == merchant.id))
+    # Check if a staff member with this phone number already exists for this store
+    staff_res = await db.execute(
+        select(MerchantStaff).where(
+            MerchantStaff.merchant_id == merchant.id,
+            MerchantStaff.phone == request.phone
+        )
+    )
     if staff_res.scalars().first():
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="A cashier already exists. Use PATCH /merchants/staff/{id} to update it."
+            detail="A staff member with this phone number already exists in your store."
         )
 
     staff = MerchantStaff(
         merchant_id=merchant.id,
         staff_name=request.staff_name,
         phone=request.phone,
-        pin_hash=get_password_hash(request.pin)
+        pin_hash=get_password_hash(request.pin),
+        can_upload_reels=bool(request.can_upload_reels),
+        can_manage_content=bool(request.can_manage_content),
     )
     db.add(staff)
 
@@ -410,6 +412,34 @@ async def update_staff(
     await db.flush()
     await db.refresh(staff)
     return ResponseEnvelope(data=StaffOut.model_validate(staff), message="Staff member updated successfully.")
+
+
+@router.delete("/merchants/staff/{staff_id}", response_model=ResponseEnvelope[dict])
+async def delete_staff(
+    staff_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Removes a cashier or counter staff member from the store."""
+    merchant_res = await db.execute(select(Merchant).where(Merchant.user_id == current_user.id))
+    merchant = merchant_res.scalars().first()
+    if not merchant:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only merchants can remove staff.")
+
+    staff_res = await db.execute(
+        select(MerchantStaff).where(
+            MerchantStaff.id == staff_id,
+            MerchantStaff.merchant_id == merchant.id,
+        )
+    )
+    staff = staff_res.scalars().first()
+    if not staff:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Staff member not found.")
+
+    await db.delete(staff)
+    await db.flush()
+    return ResponseEnvelope(data={"deleted_id": str(staff_id)}, message="Staff member removed successfully.")
+
 
 
 KNOWN_CITY_CENTERS = {

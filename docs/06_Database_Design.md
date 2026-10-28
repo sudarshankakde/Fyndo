@@ -80,6 +80,7 @@ Store POS cashier and accountant credentials. Strictly 1 staff per merchant in B
 | `pin_hash` | `VARCHAR(255)` | `NOT NULL` | Bcrypt/Argon2 hash of 6-digit scanner PIN |
 | `is_active` | `BOOLEAN` | `NOT NULL DEFAULT true` | Active toggle |
 | `can_upload_reels` | `BOOLEAN` | `NOT NULL DEFAULT false` | Owner-granted permission to publish reels from the cashier login |
+| `can_manage_content` | `BOOLEAN` | `NOT NULL DEFAULT false` | Owner-granted permission to edit, update, delete reels and manage store content |
 | `created_at` | `TIMESTAMPTZ` | `NOT NULL DEFAULT NOW()` | Timestamp created |
 | `updated_at` | `TIMESTAMPTZ` | `NOT NULL DEFAULT NOW()` | Timestamp updated |
 

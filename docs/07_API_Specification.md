@@ -117,6 +117,8 @@
     "token_type": "Bearer",
     "staff_id": "a93bc410-staff-uuid",
     "staff_name": "Ramesh (Cashier)",
+    "can_upload_reels": true,
+    "can_manage_content": true,
     "merchant_id": "8f90-merchant-uuid",
     "business_name": "Royal Bakers"
   },
@@ -991,6 +993,19 @@ Client requirements 6 & 7.
 - Takes effect immediately — the permission is re-checked on every upload, so revoking it blocks the cashier's
   very next attempt without a new login. `GET /merchants/staff` also returns `can_upload_reels`.
 - **Errors**: `403` caller has no store · `404` staff member not in caller's store.
+
+### 7.8.1 Remove Staff Member
+- **Endpoint**: `DELETE /merchants/staff/{staff_id}`
+- **Auth**: Required (store owner)
+- **Response `200 OK`**:
+```json
+{
+  "success": true,
+  "data": { "deleted_id": "5a7b..." },
+  "message": "Staff member removed successfully."
+}
+```
+- **Errors**: `403` caller has no store · `404` staff member not found in caller's store.
 
 ### 7.9 Store Insights
 Gives the owner the numbers behind requirements 3, 4, 5 and 11.

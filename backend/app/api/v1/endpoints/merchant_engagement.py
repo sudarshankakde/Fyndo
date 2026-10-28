@@ -131,7 +131,10 @@ async def update_staff_permissions(
     ).scalars().first()
     if not staff:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Staff member not found.")
-    staff.can_upload_reels = request.can_upload_reels
+    if request.can_upload_reels is not None:
+        staff.can_upload_reels = request.can_upload_reels
+    if request.can_manage_content is not None:
+        staff.can_manage_content = request.can_manage_content
     await db.flush()
     await db.refresh(staff)
     audit_log(
@@ -141,8 +144,9 @@ async def update_staff_permissions(
         target_type="merchant_staff",
         target_id=staff.id,
         can_upload_reels=staff.can_upload_reels,
+        can_manage_content=staff.can_manage_content,
     )
-    message = "Staff can now upload reels." if staff.can_upload_reels else "Staff can no longer upload reels."
+    message = "Staff permissions updated successfully."
     return ResponseEnvelope(data=StaffOut.model_validate(staff), message=message)
 
 

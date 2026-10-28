@@ -9,6 +9,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from app.api.v1.endpoints.auth import get_current_user
+from app.api.v1.endpoints.merchant_context import MerchantContext, get_merchant_context
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.redis import get_redis_client
@@ -272,13 +273,10 @@ async def verify_backup_pin(
 async def merchant_redemption_history(
     from_date: Optional[datetime] = None,
     to_date: Optional[datetime] = None,
-    current_user: User = Depends(get_current_user),
+    ctx: MerchantContext = Depends(get_merchant_context),
     db: AsyncSession = Depends(get_db),
 ):
-    merchant_res = await db.execute(select(Merchant).where(Merchant.user_id == current_user.id))
-    merchant = merchant_res.scalars().first()
-    if not merchant:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only merchants can view redemptions.")
+    merchant = ctx.merchant
 
     stmt = (
         select(RedemptionsLedger, UserCoupon, CouponTemplate, User)
@@ -312,13 +310,10 @@ async def merchant_redemption_history(
 async def merchant_analytics(
     from_date: Optional[datetime] = None,
     to_date: Optional[datetime] = None,
-    current_user: User = Depends(get_current_user),
+    ctx: MerchantContext = Depends(get_merchant_context),
     db: AsyncSession = Depends(get_db),
 ):
-    merchant_res = await db.execute(select(Merchant).where(Merchant.user_id == current_user.id))
-    merchant = merchant_res.scalars().first()
-    if not merchant:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only merchants can view analytics.")
+    merchant = ctx.merchant
 
     stmt = select(RedemptionsLedger).where(RedemptionsLedger.merchant_id == merchant.id)
     if from_date:

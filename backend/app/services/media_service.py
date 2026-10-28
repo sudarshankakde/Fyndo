@@ -75,8 +75,25 @@ def max_bytes_for(folder: str, content_type: Optional[str]) -> int:
     return megabytes * 1024 * 1024
 
 
-def resolve_extension(filename: str) -> str:
-    ext = os.path.splitext(filename)[1].lower()
+def resolve_extension(filename: str, content_type: Optional[str] = None) -> str:
+    ext = os.path.splitext(filename)[1].lower() if filename else ""
+    if ext not in ALLOWED_EXTENSIONS and content_type:
+        normalized_ct = content_type.lower().split(";")[0].strip()
+        ct_map = {
+            "image/jpeg": ".jpg",
+            "image/jpg": ".jpg",
+            "image/png": ".png",
+            "image/webp": ".webp",
+            "video/mp4": ".mp4",
+            "video/quicktime": ".mov",
+            "video/webm": ".webm",
+            "video/x-matroska": ".mkv",
+            "video/mkv": ".mkv",
+        }
+        derived = ct_map.get(normalized_ct)
+        if derived:
+            ext = derived
+
     if ext not in ALLOWED_EXTENSIONS:
         raise MediaValidationError(
             f"Unsupported file format '{ext or 'unknown'}'. "
@@ -147,10 +164,8 @@ def generate_video_thumbnail(video_path: str, output_path: str) -> bool:
 
 def store_upload(upload: UploadFile, folder: str, sync_cdn: bool = True) -> Dict[str, object]:
     """Validates and persists an upload. Returns a metadata dict."""
-    if not upload.filename:
-        raise MediaValidationError("No filename provided in upload.")
-
-    ext = resolve_extension(upload.filename)
+    filename = upload.filename or "upload"
+    ext = resolve_extension(filename, upload.content_type)
     expected_kind = "image" if ext in IMAGE_EXTENSIONS else "video"
     limit = max_bytes_for(folder, upload.content_type)
 

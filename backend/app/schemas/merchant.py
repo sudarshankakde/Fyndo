@@ -88,6 +88,8 @@ class StaffCreateRequest(BaseModel):
     staff_name: str = Field(..., min_length=2, max_length=100)
     phone: str = Field(..., min_length=10, max_length=15)
     pin: str = Field(..., min_length=6, max_length=6, description="6-digit cashier POS PIN")
+    can_upload_reels: Optional[bool] = False
+    can_manage_content: Optional[bool] = False
 
 
 class StaffOut(BaseModel):
@@ -96,6 +98,7 @@ class StaffOut(BaseModel):
     phone: str
     is_active: bool
     can_upload_reels: bool = False
+    can_manage_content: bool = False
 
     model_config = {"from_attributes": True}
 
@@ -105,6 +108,8 @@ class StaffUpdateRequest(BaseModel):
     phone: Optional[str] = Field(None, min_length=10, max_length=15)
     pin: Optional[str] = Field(None, min_length=6, max_length=6)
     is_active: Optional[bool] = None
+    can_upload_reels: Optional[bool] = None
+    can_manage_content: Optional[bool] = None
 
 
 class MerchantProfileUpdateRequest(BaseModel):

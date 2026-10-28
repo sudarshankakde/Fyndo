@@ -66,7 +66,8 @@ class RatingSummaryOut(BaseModel):
 
 
 class StaffPermissionUpdateRequest(BaseModel):
-    can_upload_reels: bool
+    can_upload_reels: Optional[bool] = None
+    can_manage_content: Optional[bool] = None
 
 
 class MerchantInsightsOut(BaseModel):

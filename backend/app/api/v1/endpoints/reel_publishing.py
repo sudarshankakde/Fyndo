@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.api.v1.endpoints.auth import AuthContext, get_auth_context, get_current_user
+from app.api.v1.endpoints.merchant_context import MerchantContext, get_merchant_context
 from app.core.audit import audit_log
 from app.core.config import settings
 from app.core.database import get_db
@@ -79,7 +80,7 @@ async def get_reel_uploader(
         claimed_merchant = str(auth.claims.get("merchant_id", ""))
         if not staff or not staff.is_active or str(staff.merchant_id) != claimed_merchant:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Staff session is no longer valid.")
-        if not staff.can_upload_reels:
+        if not staff.can_upload_reels and not getattr(staff, "can_manage_content", False):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Ask the store owner to allow you to upload reels.",
@@ -185,13 +186,13 @@ async def create_reel(
 async def extend_reel_validity(
     reel_id: uuid.UUID,
     request: ReelExtendRequest,
-    current_user: User = Depends(get_current_user),
+    ctx: MerchantContext = Depends(get_merchant_context),
     db: AsyncSession = Depends(get_db),
 ):
-    """Owner extends an offer, either before it ends or within the 24-hour grace window."""
-    merchant = await _merchant_for(db, current_user)
-    if not merchant:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only store owners can extend offers.")
+    """Owner or authorized content manager extends an offer."""
+    if ctx.is_staff and not ctx.can_manage_content:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Permission 'Manage Content' required.")
+    merchant = ctx.merchant
     reel = (
         await db.execute(
             select(Reel)
@@ -216,13 +217,11 @@ async def extend_reel_validity(
 
 @router.get("/merchants/me/reels/expiring", response_model=ResponseEnvelope[List[ReelManagementOut]])
 async def list_expiring_reels(
-    current_user: User = Depends(get_current_user),
+    ctx: MerchantContext = Depends(get_merchant_context),
     db: AsyncSession = Depends(get_db),
 ):
     """Reels whose offer has ended and that will be removed unless extended."""
-    merchant = await _merchant_for(db, current_user)
-    if not merchant:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Merchant profile not found.")
+    merchant = ctx.merchant
     now = utcnow()
     reels = (
         await db.execute(

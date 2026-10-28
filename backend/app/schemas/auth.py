@@ -58,6 +58,8 @@ class UserOut(BaseModel):
     onboarding_completed: bool = False
     created_at: Optional[datetime] = None
     metrics: Optional[ShopperProfileMetrics] = None
+    can_upload_reels: bool = False
+    can_manage_content: bool = False
 
     model_config = {"from_attributes": True}
 
@@ -83,6 +85,8 @@ class StaffLoginResponse(BaseModel):
     staff_name: str
     merchant_id: uuid.UUID
     business_name: str
+    can_upload_reels: bool = False
+    can_manage_content: bool = False
     user: Optional[UserOut] = None
 
 

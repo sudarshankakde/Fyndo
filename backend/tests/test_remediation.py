@@ -256,6 +256,15 @@ async def test_media_upload_enforces_content_and_extension(client: AsyncClient):
     assert payload["size_bytes"] > 0
     assert len(payload["checksum_sha256"]) == 64
 
+    # Blob/UUID filename without extension, but valid content_type and PNG magic bytes
+    blob_upload = await client.post(
+        "/api/v1/media/upload",
+        data={"folder": "kyc"},
+        files={"file": ("blob-without-ext", b"\x89PNG\r\n\x1a\n" + b"\x00" * 96, "image/png")},
+        headers=headers,
+    )
+    assert blob_upload.status_code == 200
+
     # Extension lies about the content: an .png that is actually MP4.
     spoofed = await client.post(
         "/api/v1/media/upload",
