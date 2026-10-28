@@ -1,0 +1,434 @@
+{% extends "base.html" %}
+{% block title %}Request & DB Logs · {{ panel_name }}{% endblock %}
+{% block heading %}Request & Database Audit Console{% endblock %}
+{% block crumbs %}Production request tracing, client telemetry, and database query profiling{% endblock %}
+
+{% block content %}
+<!-- Top 24-Hour KPI Statistics Bar -->
+<div class="stat-grid" style="margin-bottom: 24px;">
+  <div class="stat">
+    <div class="stat-label">Requests (24h)</div>
+    <div class="stat-value" style="color: var(--blue);">{{ stats.total_requests }}</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">Avg Latency</div>
+    <div class="stat-value">{{ stats.avg_latency_ms }} <span style="font-size: 13px; font-weight: normal; color: var(--muted);">ms</span></div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">Avg DB Time</div>
+    <div class="stat-value">{{ stats.avg_db_time_ms }} <span style="font-size: 13px; font-weight: normal; color: var(--muted);">ms</span></div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">DB Queries Executed</div>
+    <div class="stat-value">{{ stats.total_db_queries }}</div>
+  </div>
+  <div class="stat {% if stats.error_rate_pct > 5 %}danger{% elif stats.error_rate_pct > 1 %}warn{% else %}good{% endif %}">
+    <div class="stat-label">Error Rate</div>
+    <div class="stat-value">{{ stats.error_rate_pct }}%</div>
+  </div>
+</div>
+
+<!-- Search & Filtering Toolbar -->
+<div class="card" style="margin-bottom: 20px; padding: 14px 18px;">
+  <form method="get" action="/admin/audit-logs" style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+    <div style="flex: 1; min-width: 220px;">
+      <input type="text" name="search" value="{{ search }}" placeholder="Filter by endpoint path, client IP, user ID..."
+             style="width: 100%; padding: 8px 12px; border: 1px solid var(--line); border-radius: var(--radius); font-size: 13px;">
+    </div>
+
+    <div>
+      <select name="method" style="padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--radius); font-size: 13px; background: #fff;">
+        <option value="ALL" {% if method == 'ALL' %}selected{% endif %}>All Methods</option>
+        <option value="GET" {% if method == 'GET' %}selected{% endif %}>GET</option>
+        <option value="POST" {% if method == 'POST' %}selected{% endif %}>POST</option>
+        <option value="PUT" {% if method == 'PUT' %}selected{% endif %}>PUT</option>
+        <option value="DELETE" {% if method == 'DELETE' %}selected{% endif %}>DELETE</option>
+        <option value="PATCH" {% if method == 'PATCH' %}selected{% endif %}>PATCH</option>
+      </select>
+    </div>
+
+    <div>
+      <select name="status" style="padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--radius); font-size: 13px; background: #fff;">
+        <option value="ALL" {% if status_filter == 'ALL' %}selected{% endif %}>All Status</option>
+        <option value="2XX" {% if status_filter == '2XX' %}selected{% endif %}>2xx Success</option>
+        <option value="4XX" {% if status_filter == '4XX' %}selected{% endif %}>4xx Client Error</option>
+        <option value="5XX" {% if status_filter == '5XX' %}selected{% endif %}>5xx Server Error</option>
+        <option value="ERROR" {% if status_filter == 'ERROR' %}selected{% endif %}>All Errors (4xx+5xx)</option>
+      </select>
+    </div>
+
+    <div>
+      <select name="user_role" style="padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--radius); font-size: 13px; background: #fff;">
+        <option value="ALL" {% if user_role == 'ALL' %}selected{% endif %}>All Roles</option>
+        <option value="SUPER_ADMIN" {% if user_role == 'SUPER_ADMIN' %}selected{% endif %}>Admin (Super Admin)</option>
+        <option value="MERCHANT" {% if user_role == 'MERCHANT' %}selected{% endif %}>Merchant</option>
+        <option value="SHOPPER" {% if user_role == 'SHOPPER' %}selected{% endif %}>Customer / User</option>
+        <option value="STAFF" {% if user_role == 'STAFF' %}selected{% endif %}>Staff / Cashier</option>
+        <option value="ANONYMOUS" {% if user_role == 'ANONYMOUS' %}selected{% endif %}>Guest / Public</option>
+      </select>
+    </div>
+
+    <label style="display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text); cursor: pointer; user-select: none;">
+      <input type="checkbox" name="db_only" value="1" {% if has_db_mutations %}checked{% endif %}>
+      <span>DB Operations Only</span>
+    </label>
+
+    <button type="submit" class="btn btn-primary" style="padding: 8px 16px; font-size: 13px;">Apply Filter</button>
+    {% if search or (method and method != 'ALL') or (status_filter and status_filter != 'ALL') or (user_role and user_role != 'ALL') or has_db_mutations %}
+    <a href="/admin/audit-logs" class="btn btn-ghost" style="padding: 8px 12px; font-size: 13px; border: 1px solid var(--line);">Reset</a>
+    {% endif %}
+  </form>
+</div>
+
+<!-- Request Audit Log Table -->
+<div class="card" style="overflow: hidden;">
+  <div class="card-head" style="display: flex; justify-content: space-between; align-items: center; padding: 14px 18px; border-bottom: 1px solid var(--line);">
+    <div>
+      <h2 style="font-size: 15px;">Inbound Requests & DB Traces</h2>
+      <span class="muted" style="font-size: 12px;">Showing {{ logs|length }} of {{ total_count }} logged requests</span>
+    </div>
+
+    <!-- Pagination Controls -->
+    <div style="display: flex; gap: 6px; align-items: center;">
+      {% if current_page > 1 %}
+      <a href="?page={{ current_page - 1 }}&search={{ search }}&method={{ method }}&status={{ status_filter }}&user_role={{ user_role }}&db_only={{ 1 if has_db_mutations else 0 }}"
+         class="btn btn-ghost" style="padding: 4px 10px; font-size: 12px; border: 1px solid var(--line);">&larr; Prev</a>
+      {% endif %}
+      <span style="font-size: 12px; color: var(--muted); padding: 0 4px;">Page {{ current_page }} of {{ page_count }}</span>
+      {% if current_page < page_count %}
+      <a href="?page={{ current_page + 1 }}&search={{ search }}&method={{ method }}&status={{ status_filter }}&user_role={{ user_role }}&db_only={{ 1 if has_db_mutations else 0 }}"
+         class="btn btn-ghost" style="padding: 4px 10px; font-size: 12px; border: 1px solid var(--line);">Next &rarr;</a>
+      {% endif %}
+    </div>
+  </div>
+
+  <div style="overflow-x: auto;">
+    <table class="table" style="width: 100%; border-collapse: collapse; font-size: 13px; text-align: left;">
+      <thead>
+        <tr style="background: var(--page); border-bottom: 1px solid var(--line); color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em;">
+          <th style="padding: 10px 14px;">Time / Request ID</th>
+          <th style="padding: 10px 14px;">Method</th>
+          <th style="padding: 10px 14px;">Endpoint Path</th>
+          <th style="padding: 10px 14px;">Status</th>
+          <th style="padding: 10px 14px;">Latency (DB)</th>
+          <th style="padding: 10px 14px;">DB Impact</th>
+          <th style="padding: 10px 14px;">User / Actor</th>
+          <th style="padding: 10px 14px;">Client Details</th>
+          <th style="padding: 10px 14px; text-align: right;">Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if not logs %}
+        <tr>
+          <td colspan="9" style="padding: 36px 16px; text-align: center; color: var(--muted);">
+            No request audit logs found matching your filters.
+          </td>
+        </tr>
+        {% endif %}
+        {% for log in logs %}
+        <tr style="border-bottom: 1px solid var(--line);">
+          <!-- Timestamp & Request ID -->
+          <td style="padding: 10px 14px; white-space: nowrap;">
+            <div style="font-weight: 600; color: var(--text);">{{ log.timestamp.strftime('%H:%M:%S') }}</div>
+            <div style="font-family: monospace; font-size: 10.5px; color: var(--muted);" title="{{ log.request_id }}">{{ log.request_id[:12] }}...</div>
+          </td>
+
+          <!-- HTTP Method -->
+          <td style="padding: 10px 14px; white-space: nowrap;">
+            {% if log.method == 'GET' %}
+              <span class="badge" style="background: #e0f2fe; color: #0284c7; font-weight: 700;">GET</span>
+            {% elif log.method == 'POST' %}
+              <span class="badge" style="background: #dcfce7; color: #16a34a; font-weight: 700;">POST</span>
+            {% elif log.method == 'PUT' %}
+              <span class="badge" style="background: #fef3c7; color: #d97706; font-weight: 700;">PUT</span>
+            {% elif log.method == 'DELETE' %}
+              <span class="badge" style="background: #fee2e2; color: #dc2626; font-weight: 700;">DEL</span>
+            {% else %}
+              <span class="badge" style="background: var(--page); color: var(--text); font-weight: 700;">{{ log.method }}</span>
+            {% endif %}
+          </td>
+
+          <!-- Path & Query -->
+          <td style="padding: 10px 14px; max-width: 320px; word-break: break-all;">
+            <div style="font-weight: 600; color: var(--text); font-family: monospace; font-size: 12.5px;">{{ log.path }}</div>
+            {% if log.query_params %}
+            <div style="font-size: 11px; color: var(--muted); font-family: monospace;">?{{ log.query_params }}</div>
+            {% endif %}
+            {% if log.error_message %}
+            <div style="font-size: 11px; color: var(--danger); margin-top: 2px;">{{ log.error_message[:80] }}</div>
+            {% endif %}
+          </td>
+
+          <!-- Status Code -->
+          <td style="padding: 10px 14px; white-space: nowrap;">
+            {% if log.status_code < 300 %}
+              <span class="badge badge-good">{{ log.status_code }}</span>
+            {% elif log.status_code < 400 %}
+              <span class="badge" style="background: #e0e7ff; color: #4338ca;">{{ log.status_code }}</span>
+            {% elif log.status_code < 500 %}
+              <span class="badge badge-warn">{{ log.status_code }}</span>
+            {% else %}
+              <span class="badge badge-danger">{{ log.status_code }}</span>
+            {% endif %}
+          </td>
+
+          <!-- Latency -->
+          <td style="padding: 10px 14px; white-space: nowrap;">
+            <div style="font-weight: 600;">{{ log.duration_ms }} ms</div>
+            {% if log.db_time_ms > 0 %}
+            <div style="font-size: 11px; color: var(--blue-dark);">DB: {{ log.db_time_ms }} ms</div>
+            {% endif %}
+          </td>
+
+          <!-- DB Impact -->
+          <td style="padding: 10px 14px; min-width: 170px;">
+            {% if log.db_query_count > 0 %}
+              <div style="display: flex; gap: 4px; align-items: center; flex-wrap: wrap; margin-bottom: 3px;">
+                <span class="badge" style="background: #f1f5f9; color: #334155; font-weight: 600;">{{ log.db_query_count }} SQL</span>
+                {% if log.db_operations %}
+                  {% for op, count in log.db_operations.items() %}
+                    <span style="font-size: 10.5px; font-weight: 600; color: {% if op in ['INSERT','UPDATE','DELETE'] %}#b45309{% else %}#475569{% endif %};">
+                      {{ count }} {{ op }}
+                    </span>
+                  {% endfor %}
+                {% endif %}
+              </div>
+              {% if log.tables_affected %}
+              <div style="display: flex; gap: 3px; flex-wrap: wrap;">
+                {% for table in log.tables_affected %}
+                <span style="font-size: 10px; background: #e2e8f0; color: #1e293b; padding: 1px 5px; border-radius: 4px; font-family: monospace;">{{ table }}</span>
+                {% endfor %}
+              </div>
+              {% endif %}
+            {% else %}
+              <span class="muted" style="font-size: 12px;">No DB queries</span>
+            {% endif %}
+          </td>
+
+          <!-- User / Actor Details -->
+          <td style="padding: 10px 14px; min-width: 170px;">
+            {% set u = user_map.get(log.user_id) if (user_map and log.user_id) else None %}
+            <div style="margin-bottom: 3px;">
+              {% if log.user_role == 'SUPER_ADMIN' or (log.user_role and 'ADMIN' in log.user_role) %}
+                <span class="badge" style="background: #f3e8ff; color: #7e22ce; font-weight: 700; font-size: 10px;">Admin</span>
+              {% elif log.user_role == 'MERCHANT' %}
+                <span class="badge" style="background: #ffedd5; color: #c2410c; font-weight: 700; font-size: 10px;">Merchant</span>
+              {% elif log.user_role in ['ROLE_CASHIER', 'CASHIER', 'STAFF'] %}
+                <span class="badge" style="background: #ccfbf1; color: #0f766e; font-weight: 700; font-size: 10px;">Staff</span>
+              {% elif log.user_role in ['SHOPPER', 'CUSTOMER', 'USER'] %}
+                <span class="badge" style="background: #e0f2fe; color: #0369a1; font-weight: 700; font-size: 10px;">User</span>
+              {% elif log.user_role %}
+                <span class="badge" style="background: var(--page); color: var(--text); font-weight: 700; font-size: 10px;">{{ log.user_role }}</span>
+              {% else %}
+                <span class="badge" style="background: #f1f5f9; color: #64748b; font-weight: 600; font-size: 10px;">Public / Guest</span>
+              {% endif %}
+            </div>
+
+            {% if u and u.name %}
+              <div style="font-weight: 600; font-size: 12px; color: var(--text);">{{ u.name }}</div>
+              {% if u.phone or u.business_name %}
+              <div style="font-size: 10.5px; color: var(--muted);">{{ u.business_name or u.phone or '' }}</div>
+              {% endif %}
+            {% elif log.user_id %}
+              <div style="font-family: monospace; font-size: 11px; color: var(--text); font-weight: 500;" title="{{ log.user_id }}">
+                {{ log.user_id[:13] }}...
+              </div>
+            {% else %}
+              <div style="font-size: 11px; color: var(--muted); italic">Unauthenticated</div>
+            {% endif %}
+          </td>
+
+          <!-- Client Details -->
+          <td style="padding: 10px 14px; min-width: 140px;">
+            <div style="font-size: 12px; font-weight: 600; font-family: monospace; color: var(--text);">{{ log.client_ip or 'unknown' }}</div>
+            {% if log.user_agent %}
+            <div style="font-size: 10px; color: var(--muted); max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="{{ log.user_agent }}">
+              {{ log.user_agent }}
+            </div>
+            {% endif %}
+          </td>
+
+          <!-- Inspect Button -->
+          <td style="padding: 10px 14px; text-align: right; white-space: nowrap;">
+            <button type="button" class="btn btn-ghost" style="padding: 4px 8px; font-size: 12px; border: 1px solid var(--line);"
+                    onclick="openInspectModal('{{ log.id }}')">
+              Inspect
+            </button>
+          </td>
+        </tr>
+
+        <!-- Hidden JSON Data for Modal Inspection -->
+        <script id="log-data-{{ log.id }}" type="application/json">
+          {
+            "id": "{{ log.id }}",
+            "request_id": "{{ log.request_id }}",
+            "timestamp": "{{ log.timestamp.isoformat() }}",
+            "method": "{{ log.method }}",
+            "path": "{{ log.path }}",
+            "query_params": {{ log.query_params | tojson if log.query_params else 'null' }},
+            "status_code": {{ log.status_code }},
+            "duration_ms": {{ log.duration_ms }},
+            "client_ip": {{ log.client_ip | tojson if log.client_ip else 'null' }},
+            "user_agent": {{ log.user_agent | tojson if log.user_agent else 'null' }},
+            "user_id": {{ log.user_id | tojson if log.user_id else 'null' }},
+            "user_role": {{ log.user_role | tojson if log.user_role else 'null' }},
+            "user_details": {{ (user_map.get(log.user_id) if (user_map and log.user_id) else None) | tojson }},
+            "request_body": {{ log.request_body | tojson if log.request_body else 'null' }},
+            "response_size": {{ log.response_size or 0 }},
+            "error_message": {{ log.error_message | tojson if log.error_message else 'null' }},
+            "db_query_count": {{ log.db_query_count }},
+            "db_time_ms": {{ log.db_time_ms }},
+            "db_operations": {{ log.db_operations | tojson if log.db_operations else '{}' }},
+            "tables_affected": {{ log.tables_affected | tojson if log.tables_affected else '[]' }},
+            "db_queries": {{ log.db_queries | tojson if log.db_queries else '[]' }}
+          }
+        </script>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Modal Dialog for Request & DB Inspection -->
+<div id="inspectModal" style="display: none; position: fixed; inset: 0; z-index: 1000; background: rgba(0,0,0,0.6); align-items: center; justify-content: center; padding: 20px;">
+  <div style="background: #ffffff; border-radius: 12px; width: 100%; max-width: 900px; max-height: 90vh; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 20px 40px rgba(0,0,0,0.25);">
+    <!-- Modal Header -->
+    <div style="padding: 16px 20px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; background: #fafafa;">
+      <div>
+        <h3 id="modalTitle" style="font-size: 16px; margin: 0; color: var(--text);">Request & DB Trace Details</h3>
+        <div id="modalSub" style="font-size: 11.5px; color: var(--muted); font-family: monospace; margin-top: 2px;"></div>
+      </div>
+      <button type="button" onclick="closeInspectModal()" style="background: none; border: none; font-size: 20px; color: var(--muted); cursor: pointer; padding: 4px 8px;">&times;</button>
+    </div>
+
+    <!-- Modal Content Body -->
+    <div id="modalBody" style="padding: 20px; overflow-y: auto; flex: 1; font-size: 13px; line-height: 1.6;">
+      <!-- Content populated dynamically via JavaScript -->
+    </div>
+
+    <!-- Modal Footer -->
+    <div style="padding: 12px 20px; border-top: 1px solid var(--line); background: #fafafa; display: flex; justify-content: flex-end;">
+      <button type="button" class="btn btn-ghost" onclick="closeInspectModal()" style="border: 1px solid var(--line); padding: 6px 16px;">Close</button>
+    </div>
+  </div>
+</div>
+
+<script>
+function openInspectModal(logId) {
+  const el = document.getElementById('log-data-' + logId);
+  if (!el) return;
+  const data = JSON.parse(el.textContent);
+
+  document.getElementById('modalTitle').textContent = data.method + ' ' + data.path + ' (' + data.status_code + ')';
+  document.getElementById('modalSub').textContent = 'Request ID: ' + data.request_id + ' · ' + data.timestamp;
+
+  let html = `
+    <!-- Summary Grid -->
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 20px;">
+      <div style="background: #f8fafc; padding: 10px 12px; border-radius: 8px; border: 1px solid #e2e8f0;">
+        <span style="font-size: 11px; color: var(--muted); display: block; text-transform: uppercase;">Total Duration</span>
+        <strong style="font-size: 15px; color: #0f172a;">${data.duration_ms} ms</strong>
+      </div>
+      <div style="background: #f8fafc; padding: 10px 12px; border-radius: 8px; border: 1px solid #e2e8f0;">
+        <span style="font-size: 11px; color: var(--muted); display: block; text-transform: uppercase;">Database Time</span>
+        <strong style="font-size: 15px; color: #0284c7;">${data.db_time_ms} ms (${data.db_query_count} queries)</strong>
+      </div>
+      <div style="background: #f8fafc; padding: 10px 12px; border-radius: 8px; border: 1px solid #e2e8f0;">
+        <span style="font-size: 11px; color: var(--muted); display: block; text-transform: uppercase;">Client IP & Role</span>
+        <strong style="font-size: 13px; color: #0f172a;">${data.client_ip || 'N/A'} (${data.user_role || 'Guest'})</strong>
+      </div>
+      <div style="background: #f8fafc; padding: 10px 12px; border-radius: 8px; border: 1px solid #e2e8f0;">
+        <span style="font-size: 11px; color: var(--muted); display: block; text-transform: uppercase;">Response Size</span>
+        <strong style="font-size: 14px; color: #0f172a;">${data.response_size || 0} bytes</strong>
+      </div>
+    </div>
+
+    <!-- Client & Authentication Telemetry -->
+    <div style="margin-bottom: 20px;">
+      <h4 style="margin: 0 0 8px 0; font-size: 13px; text-transform: uppercase; color: var(--muted); letter-spacing: 0.05em;">Client & Authentication Telemetry</h4>
+      <div style="background: #f8fafc; padding: 12px 14px; border-radius: 8px; border: 1px solid #e2e8f0; font-size: 12px; display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px;">
+        <div><strong>User Role:</strong> <span style="font-weight: 700; color: #4338ca;">${data.user_role || 'Public / Guest'}</span></div>
+        <div><strong>User ID:</strong> <span style="font-family: monospace;">${data.user_id || 'N/A'}</span></div>
+        ${data.user_details && data.user_details.name ? `<div><strong>User Name:</strong> ${data.user_details.name}</div>` : ''}
+        ${data.user_details && data.user_details.phone ? `<div><strong>Phone:</strong> ${data.user_details.phone}</div>` : ''}
+        ${data.user_details && data.user_details.email ? `<div><strong>Email:</strong> ${data.user_details.email}</div>` : ''}
+        ${data.user_details && data.user_details.business_name ? `<div><strong>Store:</strong> ${data.user_details.business_name}</div>` : ''}
+        <div><strong>Client IP:</strong> <span style="font-family: monospace;">${data.client_ip || 'N/A'}</span></div>
+        <div style="grid-column: 1 / -1;"><strong>User Agent:</strong> <span style="font-family: monospace; font-size: 11px; color: var(--muted);">${data.user_agent || 'Unknown'}</span></div>
+        ${data.query_params ? '<div style="grid-column: 1 / -1;"><strong>Query String:</strong> ?' + data.query_params + '</div>' : ''}
+      </div>
+    </div>
+  `;
+
+  if (data.error_message) {
+    html += `
+      <div style="margin-bottom: 20px;">
+        <h4 style="margin: 0 0 8px 0; font-size: 13px; text-transform: uppercase; color: var(--danger); letter-spacing: 0.05em;">Error Details</h4>
+        <div style="background: #fee2e2; color: #991b1b; padding: 10px 14px; border-radius: 8px; border: 1px solid #fecaca; font-family: monospace; font-size: 12px;">
+          ${data.error_message}
+        </div>
+      </div>
+    `;
+  }
+
+  if (data.request_body) {
+    html += `
+      <div style="margin-bottom: 20px;">
+        <h4 style="margin: 0 0 8px 0; font-size: 13px; text-transform: uppercase; color: var(--muted); letter-spacing: 0.05em;">Request Payload (Sanitized)</h4>
+        <pre style="background: #1e293b; color: #f8fafc; padding: 12px 14px; border-radius: 8px; overflow-x: auto; font-size: 11.5px; margin: 0;">${data.request_body}</pre>
+      </div>
+    `;
+  }
+
+  // Database Execution Breakdown
+  html += `
+    <div>
+      <h4 style="margin: 0 0 8px 0; font-size: 13px; text-transform: uppercase; color: var(--muted); letter-spacing: 0.05em;">
+        Database Queries & Impact (${data.db_query_count} Statements · ${data.db_time_ms} ms)
+      </h4>
+  `;
+
+  if (!data.db_queries || data.db_queries.length === 0) {
+    html += `<div style="color: var(--muted); padding: 12px 0;">No SQL queries were executed during this request.</div>`;
+  } else {
+    html += `<div style="display: flex; flex-direction: column; gap: 10px;">`;
+    data.db_queries.forEach((q, idx) => {
+      const opColor = q.operation === 'INSERT' ? '#16a34a' : q.operation === 'UPDATE' ? '#d97706' : q.operation === 'DELETE' ? '#dc2626' : '#0284c7';
+      html += `
+        <div style="border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
+          <div style="padding: 6px 12px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; font-size: 11px;">
+            <div>
+              <span style="font-weight: 700; color: ${opColor}; margin-right: 6px;">#${idx + 1} ${q.operation}</span>
+              ${q.table ? '<span style="background: #e2e8f0; padding: 1px 5px; border-radius: 4px; font-family: monospace;">' + q.table + '</span>' : ''}
+              ${q.rows !== null && q.rows !== undefined ? '<span style="color: var(--muted); margin-left: 6px;">(' + q.rows + ' rows affected)</span>' : ''}
+            </div>
+            <strong style="color: #0f172a;">${q.duration_ms} ms</strong>
+          </div>
+          <pre style="margin: 0; padding: 10px 12px; background: #0f172a; color: #38bdf8; font-size: 11px; overflow-x: auto; line-height: 1.4;">${q.sql}</pre>
+          ${q.error ? '<div style="background: #fef2f2; color: #b91c1c; padding: 4px 12px; font-size: 11px;">Error: ' + q.error + '</div>' : ''}
+        </div>
+      `;
+    });
+    html += `</div>`;
+  }
+  html += `</div>`;
+
+  document.getElementById('modalBody').innerHTML = html;
+  const modal = document.getElementById('inspectModal');
+  modal.style.display = 'flex';
+}
+
+function closeInspectModal() {
+  document.getElementById('inspectModal').style.display = 'none';
+}
+
+// Close modal on Escape key or clicking backdrop
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeInspectModal();
+});
+document.getElementById('inspectModal').addEventListener('click', (e) => {
+  if (e.target.id === 'inspectModal') closeInspectModal();
+});
+</script>
+{% endblock %}
+

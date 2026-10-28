@@ -18,6 +18,7 @@ from app.models.notification import (
     NotificationCategory,
     DevicePlatform,
 )
+from app.models.request_audit_log import RequestAuditLog
 
 __all__ = [
     "Base",
@@ -46,4 +47,5 @@ __all__ = [
     "MerchantCallClick",
     "MerchantRating",
     "SystemSetting",
+    "RequestAuditLog",
 ]

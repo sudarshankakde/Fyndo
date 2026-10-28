@@ -13,6 +13,7 @@ from app.api.v1.endpoints import (
     reels,
     admin,
     admin_settings,
+    admin_audit_logs,
     ws,
 )
 
@@ -31,4 +32,5 @@ api_router.include_router(notifications.router, tags=["Notifications"])
 api_router.include_router(media.router, tags=["Media Uploads"])
 api_router.include_router(admin.router, tags=["Admin Moderation"])
 api_router.include_router(admin_settings.router, tags=["Admin Moderation"])
+api_router.include_router(admin_audit_logs.router, tags=["Admin Audit Logs"])
 api_router.include_router(ws.router, tags=["Real-time"])

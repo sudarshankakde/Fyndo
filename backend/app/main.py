@@ -26,7 +26,8 @@ logger = logging.getLogger("fyndo.main")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifecycle events: startup and shutdown."""
-    logger.info("Starting up Fyndo Core API...")
+    import time as _time
+    logger.info("Starting up Fyndo Core API... (server local time: %s)", _time.strftime("%Y-%m-%d %H:%M:%S"))
 
     # Initialize database tables
     try:

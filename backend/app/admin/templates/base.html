@@ -18,6 +18,7 @@
       <div class="nav-group">
         <a class="nav-link {% if current_path in ['/admin', '/admin/'] %}active{% endif %}" href="/admin/">Dashboard</a>
         <a class="nav-link {% if current_path.startswith('/admin/moderation') %}active{% endif %}" href="/admin/moderation">Reel Moderation</a>
+        <a class="nav-link {% if current_path.startswith('/admin/audit-logs') %}active{% endif %}" href="/admin/audit-logs">Request & DB Logs</a>
       </div>
       {% for group in nav %}
       <div class="nav-group">

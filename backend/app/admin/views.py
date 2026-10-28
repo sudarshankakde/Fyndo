@@ -26,6 +26,11 @@ from app.models import (
     UserCoupon,
 )
 from app.models.system_settings import AUTO_APPROVE_REELS
+from app.services.audit_service import (
+    enrich_logs_with_user_details,
+    get_audit_stats,
+    query_audit_logs,
+)
 from app.services.moderation_alerts import notify_reel_decision
 from app.services.reel_lifecycle_service import start_offer_clock
 from app.services.settings_service import is_auto_approve_enabled, set_setting
@@ -226,6 +231,54 @@ async def reject_reel_action(
         await notify_reel_decision(db, reel=reel, owner_id=owner_id, decision="REJECT")
         await db.commit()
     return RedirectResponse(url="/admin/moderation?ok=Reel+rejected", status_code=303)
+
+
+@router.get("/audit-logs")
+async def audit_logs_view(
+    request: Request,
+    search: str = "",
+    method: str = "ALL",
+    status: str = "ALL",
+    user_role: str = "ALL",
+    db_only: str = "0",
+    page: int = 1,
+    db: AsyncSession = Depends(get_db),
+    admin: Dict[str, Any] = Depends(current_admin),
+):
+    """Production request and database query inspection view."""
+    has_db_mutations = db_only in ("1", "true", "True")
+    logs, total_count, page_count = await query_audit_logs(
+        db,
+        method=method,
+        status_filter=status,
+        user_role=user_role,
+        search=search,
+        has_db_mutations=has_db_mutations,
+        page=page,
+        page_size=50,
+    )
+    stats = await get_audit_stats(db, hours=24)
+    user_map = await enrich_logs_with_user_details(db, logs)
+
+    return templates.TemplateResponse(
+        request,
+        "audit_logs.html",
+        panel_context(
+            request,
+            admin,
+            logs=logs,
+            stats=stats,
+            user_map=user_map,
+            total_count=total_count,
+            page_count=page_count,
+            current_page=page,
+            search=search,
+            method=method,
+            status_filter=status,
+            user_role=user_role,
+            has_db_mutations=has_db_mutations,
+        ),
+    )
 
 
 @router.get("/{model_key}")

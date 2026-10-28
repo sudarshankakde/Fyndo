@@ -1,4 +1,5 @@
 import hashlib
+import os
 import time
 from typing import Any, Dict, Optional
 import cloudinary
@@ -146,3 +147,37 @@ class CloudinaryService:
             return f"{base}/video/upload/sp_auto/{rest_without_ext}.m3u8"
 
         return None
+
+    @staticmethod
+    def resolve_to_cloudinary_url(url: Optional[str], folder: str = "logos") -> Optional[str]:
+        """
+        If the url is local (e.g. /uploads/..., http://localhost:.../uploads/...),
+        checks if the file exists in local storage and uploads it to Cloudinary.
+        Returns the Cloudinary CDN URL, or the original url if upload fails / not configured.
+        """
+        if not url:
+            return url
+        if "res.cloudinary.com" in url or (url.startswith("https://") and "localhost" not in url and "127.0.0.1" not in url and "10.0.2.2" not in url):
+            return url
+        if not _ensure_cloudinary_configured():
+            return url
+
+        upload_idx = url.find("/uploads/")
+        if upload_idx == -1:
+            return url
+        rel_path = url[upload_idx + 1:]  # e.g. "uploads/logos/..."
+
+        backend_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+        local_file_path = os.path.join(backend_root, rel_path)
+
+        if not os.path.exists(local_file_path):
+            return url
+
+        try:
+            cloud_res = CloudinaryService.upload_file(local_file_path, folder=folder, resource_type="image")
+            if cloud_res and cloud_res.get("url"):
+                return cloud_res["url"]
+        except Exception:
+            pass
+
+        return url

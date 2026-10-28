@@ -14,6 +14,7 @@ import json
 from app.models.user import User, UserRole
 from app.schemas.common import ResponseEnvelope
 from app.services import merchant_engagement_service as engagement
+from app.services.cloudinary_service import CloudinaryService
 from app.services.category_assets import (
     STORE_CATEGORIES_METADATA,
     normalize_sector,
@@ -186,6 +187,12 @@ async def onboard_merchant(
     cover_url = request.cover_url or get_default_cover_url(sector_enum.value)
     logo_url = request.logo_url or get_default_logo_url(sector_enum.value)
 
+    if logo_url and (logo_url.startswith("/uploads/") or "localhost" in logo_url or "10.0.2.2" in logo_url):
+        logo_url = CloudinaryService.resolve_to_cloudinary_url(logo_url, folder="logos") or logo_url
+
+    if cover_url and (cover_url.startswith("/uploads/") or "localhost" in cover_url or "10.0.2.2" in cover_url):
+        cover_url = CloudinaryService.resolve_to_cloudinary_url(cover_url, folder="covers") or cover_url
+
     merchant = Merchant(
         user_id=current_user.id,
         business_name=request.business_name,
@@ -221,9 +228,29 @@ async def onboard_merchant(
 @router.get("/merchants/profile", response_model=ResponseEnvelope[MerchantOut])
 async def get_merchant_profile(
     ctx: MerchantContext = Depends(get_merchant_context),
+    db: AsyncSession = Depends(get_db),
 ):
     """Retrieves current store's merchant profile (accessible by store owner and counter staff)."""
-    return ResponseEnvelope(data=MerchantOut.model_validate(ctx.merchant))
+    merchant = ctx.merchant
+    needs_commit = False
+
+    if merchant.logo_url and ("localhost" in merchant.logo_url or "10.0.2.2" in merchant.logo_url or merchant.logo_url.startswith("/uploads/")):
+        cloud_logo = CloudinaryService.resolve_to_cloudinary_url(merchant.logo_url, folder="logos")
+        if cloud_logo and cloud_logo != merchant.logo_url:
+            merchant.logo_url = cloud_logo
+            needs_commit = True
+
+    if merchant.cover_url and ("localhost" in merchant.cover_url or "10.0.2.2" in merchant.cover_url or merchant.cover_url.startswith("/uploads/")):
+        cloud_cover = CloudinaryService.resolve_to_cloudinary_url(merchant.cover_url, folder="covers")
+        if cloud_cover and cloud_cover != merchant.cover_url:
+            merchant.cover_url = cloud_cover
+            needs_commit = True
+
+    if needs_commit:
+        await db.flush()
+        await db.commit()
+
+    return ResponseEnvelope(data=MerchantOut.model_validate(merchant))
 
 
 @router.get("/merchants/categories", response_model=ResponseEnvelope[List[CategoryMetaOut]])
@@ -231,14 +258,16 @@ async def get_store_categories():
     """Returns all 20 store primary categories with curated subcategories and icons."""
     data = []
     for cat in STORE_CATEGORIES_METADATA:
+        cov = get_default_cover_url(cat["id"])
+        log = get_default_logo_url(cat["id"])
         data.append(
             CategoryMetaOut(
                 id=cat["id"],
                 name=cat["name"],
                 icon=cat.get("icon"),
                 sub_categories=cat.get("sub_categories", []),
-                cover_url=get_default_cover_url(cat["id"]),
-                logo_url=get_default_logo_url(cat["id"]),
+                cover_url=CloudinaryService.resolve_to_cloudinary_url(cov, folder="covers") or cov,
+                logo_url=CloudinaryService.resolve_to_cloudinary_url(log, folder="logos") or log,
             )
         )
     return ResponseEnvelope(data=data)
@@ -266,6 +295,8 @@ async def update_merchant_profile(
             merchant.cover_url = None
             merchant.profile_video_thumbnail_url = None
         else:
+            if cov and (cov.startswith("/uploads/") or "localhost" in cov or "10.0.2.2" in cov):
+                cov = CloudinaryService.resolve_to_cloudinary_url(cov, folder="covers") or cov
             merchant.cover_url = cov
             merchant.profile_video_thumbnail_url = cov
         dump.pop("cover_url", None)
@@ -273,6 +304,8 @@ async def update_merchant_profile(
     # Logo photo remove or update
     if "logo_url" in dump:
         logo = dump["logo_url"]
+        if logo and (logo.startswith("/uploads/") or "localhost" in logo or "10.0.2.2" in logo):
+            logo = CloudinaryService.resolve_to_cloudinary_url(logo, folder="logos") or logo
         merchant.logo_url = None if (logo == "" or logo is None) else logo
         dump.pop("logo_url", None)
 
@@ -606,8 +639,8 @@ async def get_public_merchant(
             longitude=merchant.longitude,
             profile_video_url=merchant.profile_video_url,
             profile_video_thumbnail_url=merchant.profile_video_thumbnail_url,
-            cover_url=merchant.cover_url,
-            logo_url=merchant.logo_url,
+            cover_url=CloudinaryService.resolve_to_cloudinary_url(merchant.cover_url, folder="covers") if merchant.cover_url else None,
+            logo_url=CloudinaryService.resolve_to_cloudinary_url(merchant.logo_url, folder="logos") if merchant.logo_url else None,
             followers_count=await engagement.followers_count(db, merchant.id),
             is_following=await engagement.is_following(db, merchant.id, current_user),
             is_verified=bool(merchant.kyc_status == KycStatus.APPROVED),

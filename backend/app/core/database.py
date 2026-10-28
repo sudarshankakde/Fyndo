@@ -29,6 +29,19 @@ if not _is_sqlite:
         "pool_recycle": settings.DB_POOL_RECYCLE_SECONDS,
     })
 
+import time as _time
+import os as _os
+_local_tz = _time.tzname[0] if _time.tzname else "UTC"
+_os.environ.setdefault("TZ", _local_tz)
+try:
+    _time.tzset()
+except AttributeError:
+    pass
+
+if not _is_sqlite:
+    _engine_kwargs.setdefault("connect_args", {})
+    _engine_kwargs["connect_args"].update({"server_settings": {"timezone": _local_tz}})
+
 engine = create_async_engine(settings.DATABASE_URL, **_engine_kwargs)
 
 # Async session factory
@@ -54,6 +67,9 @@ _PERFORMANCE_INDEXES = (
     "ON redemptions_ledger (merchant_id, created_at)",
     "CREATE INDEX IF NOT EXISTS ix_reels_expires_at ON reels (expires_at)",
     "CREATE INDEX IF NOT EXISTS ix_reel_bookmarks_user ON reel_bookmarks (user_id, created_at)",
+    "CREATE INDEX IF NOT EXISTS ix_request_audit_logs_time ON request_audit_logs (timestamp)",
+    "CREATE INDEX IF NOT EXISTS ix_request_audit_logs_status_time ON request_audit_logs (status_code, timestamp)",
+    "CREATE INDEX IF NOT EXISTS ix_request_audit_logs_path_time ON request_audit_logs (path, timestamp)",
 )
 
 
