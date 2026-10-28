@@ -27,7 +27,7 @@ class ReelCreateRequest(BaseModel):
     title: str = Field(..., min_length=3, max_length=150)
     video_url: str = Field(..., min_length=5)
     thumbnail_url: Optional[str] = Field(
-        default="https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=800&q=80",
+        default=None,
         description="Thumbnail image URL"
     )
     cloudinary_public_id: Optional[str] = None
@@ -156,6 +156,8 @@ class ReelManagementOut(BaseModel):
     created_by_staff_id: Optional[uuid.UUID] = None
     claims_count: int = 0
     redemptions_count: int = 0
+    comments_count: int = 0
+    likes_count: int = 0
 
     # Merchant summary for management context
     merchant_name: Optional[str] = None

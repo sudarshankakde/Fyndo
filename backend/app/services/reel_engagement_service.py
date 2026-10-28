@@ -18,10 +18,12 @@ from app.core.privacy import mask_phone
 from app.core.redis import get_redis_client
 from app.models.coupon import CouponTemplate
 from app.models.merchant import KycStatus, Merchant
+from app.models.notification import NotificationCategory
 from app.models.reel import Reel, ReelStatus, ReelView
 from app.models.reel_engagement import ReelComment, ReelLike, ReelBookmark
 from app.models.user import User, UserRole
 from app.schemas.reel import ReelCommentOut, SavedReelOut
+from app.services.notification_service import NotificationService
 from app.services.reel_lifecycle_service import live_offer_clause
 
 
@@ -36,12 +38,14 @@ class CommentNotFoundError(Exception):
     """Raised when a replied-to comment does not exist on the reel."""
 
 
-def _display_name(user: User) -> str:
-    return user.username or user.full_name or mask_phone(user.phone)
+def _display_name(user: User, merchant: Optional[Merchant] = None) -> str:
+    if merchant and merchant.business_name:
+        return merchant.business_name
+    return user.full_name or user.username or (mask_phone(user.phone) if user.phone else "Shopper")
 
 
-def _initial(user: User) -> str:
-    return (_display_name(user) or "F")[0].upper()
+def _initial(user: User, merchant: Optional[Merchant] = None) -> str:
+    return (_display_name(user, merchant) or "F")[0].upper()
 
 
 def _is_store_reply(user: User) -> bool:
@@ -49,13 +53,21 @@ def _is_store_reply(user: User) -> bool:
     return role == UserRole.MERCHANT.value
 
 
-def _comment_out(comment: ReelComment, user: User) -> ReelCommentOut:
+def _comment_out(
+    comment: ReelComment, user: User, merchant: Optional[Merchant] = None
+) -> ReelCommentOut:
+    name = _display_name(user, merchant)
+    img = (
+        merchant.logo_url
+        if (merchant and merchant.logo_url)
+        else user.profile_image_url
+    )
     return ReelCommentOut(
         id=comment.id,
         parent_comment_id=comment.parent_comment_id,
-        user_name=_display_name(user),
-        user_initial=_initial(user),
-        profile_image_url=user.profile_image_url,
+        user_name=name,
+        user_initial=_initial(user, merchant),
+        profile_image_url=img,
         text=comment.text,
         created_at=comment.created_at,
         is_store_reply=_is_store_reply(user),
@@ -142,7 +154,8 @@ async def record_view(
 
 async def toggle_like(db: AsyncSession, *, reel_id: uuid.UUID, user: User) -> Tuple[bool, int]:
     """Adds or removes the current user's like. Returns (liked, likes_count)."""
-    if not await _get_live_reel(db, reel_id):
+    reel = await _get_live_reel(db, reel_id)
+    if not reel:
         raise ReelNotFoundError()
 
     existing = (
@@ -169,6 +182,26 @@ async def toggle_like(db: AsyncSession, *, reel_id: uuid.UUID, user: User) -> Tu
     likes_count = (
         await db.execute(select(func.count(ReelLike.id)).where(ReelLike.reel_id == reel_id))
     ).scalar_one()
+
+    if liked:
+        reel_merchant = (
+            await db.execute(select(Merchant).where(Merchant.id == reel.merchant_id))
+        ).scalars().first()
+        if reel_merchant and reel_merchant.user_id != user.id:
+            liker_name = _display_name(user)
+            await NotificationService.notify_safe(
+                db,
+                user_id=reel_merchant.user_id,
+                event_type="reel_like",
+                title="New like on your reel",
+                body=f"{liker_name} liked your reel \"{reel.title}\"",
+                category=NotificationCategory.UPDATES.value,
+                image_url=reel.thumbnail_url,
+                action_type="REEL",
+                action_ref=str(reel.id),
+                payload={"reel_id": str(reel.id)},
+            )
+
     return liked, int(likes_count)
 
 
@@ -183,14 +216,15 @@ async def list_comments(db: AsyncSession, *, reel_id: uuid.UUID) -> List[ReelCom
 
     rows = (
         await db.execute(
-            select(ReelComment, User)
+            select(ReelComment, User, Merchant)
             .join(User, ReelComment.user_id == User.id)
+            .outerjoin(Merchant, Merchant.user_id == User.id)
             .where(ReelComment.reel_id == reel_id)
             .order_by(ReelComment.created_at.asc())
             .limit(200)
         )
     ).all()
-    return [_comment_out(comment, user) for comment, user in rows]
+    return [_comment_out(comment, user, merchant) for comment, user, merchant in rows]
 
 
 async def create_comment(
@@ -207,6 +241,7 @@ async def create_comment(
     if not reel.allow_comments:
         raise PermissionError("Comments are disabled for this reel.")
 
+    parent = None
     if parent_comment_id:
         parent = (
             await db.execute(
@@ -218,18 +253,80 @@ async def create_comment(
         if not parent:
             raise CommentNotFoundError()
         # Flatten replies to a single level for stable threading.
-        parent_comment_id = parent.parent_comment_id or parent.id
+        stored_parent_comment_id = parent.parent_comment_id or parent.id
+    else:
+        stored_parent_comment_id = None
 
     comment = ReelComment(
         reel_id=reel_id,
         user_id=user.id,
-        parent_comment_id=parent_comment_id,
+        parent_comment_id=stored_parent_comment_id,
         text=text.strip(),
     )
     db.add(comment)
     await db.flush()
     await db.refresh(comment)
-    return _comment_out(comment, user)
+
+    merchant = None
+    if _is_store_reply(user):
+        merchant = (
+            await db.execute(select(Merchant).where(Merchant.user_id == user.id))
+        ).scalars().first()
+
+    # Dispatch engagement notifications
+    commenter_name = _display_name(user, merchant)
+    snippet = text.strip()
+    if len(snippet) > 80:
+        snippet = snippet[:77] + "..."
+
+    # 1. Notify the author of the comment being replied to
+    if parent and parent.user_id != user.id:
+        await NotificationService.notify_safe(
+            db,
+            user_id=parent.user_id,
+            event_type="reel_comment_reply",
+            title=f"{commenter_name} replied to your comment",
+            body=f'"{snippet}"',
+            category=NotificationCategory.UPDATES.value,
+            image_url=reel.thumbnail_url,
+            action_type="COMMENT",
+            action_ref=str(reel.id),
+            payload={
+                "reel_id": str(reel.id),
+                "comment_id": str(comment.id),
+                "parent_comment_id": str(parent.id),
+            },
+        )
+
+    # 2. Notify the reel author (the merchant) about all engagement on their reel
+    reel_merchant = (
+        await db.execute(select(Merchant).where(Merchant.id == reel.merchant_id))
+    ).scalars().first()
+
+    if reel_merchant and reel_merchant.user_id != user.id:
+        if not parent or parent.user_id != reel_merchant.user_id:
+            title = (
+                f"New reply from {commenter_name}"
+                if parent
+                else f"New comment from {commenter_name}"
+            )
+            await NotificationService.notify_safe(
+                db,
+                user_id=reel_merchant.user_id,
+                event_type="reel_comment",
+                title=title,
+                body=f'"{snippet}" on "{reel.title}"',
+                category=NotificationCategory.UPDATES.value,
+                image_url=reel.thumbnail_url,
+                action_type="COMMENT",
+                action_ref=str(reel.id),
+                payload={
+                    "reel_id": str(reel.id),
+                    "comment_id": str(comment.id),
+                },
+            )
+
+    return _comment_out(comment, user, merchant)
 
 
 async def toggle_bookmark(

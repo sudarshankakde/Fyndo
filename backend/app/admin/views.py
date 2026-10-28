@@ -1,11 +1,13 @@
 """Dashboard, list and detail views for the HTML super-admin panel."""
 import logging
-from typing import Any, Dict
+import uuid
+from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.admin.deps import current_admin
 from app.admin.helpers import form_fields, get_row, meta_or_404, panel_context
@@ -24,6 +26,8 @@ from app.models import (
     UserCoupon,
 )
 from app.models.system_settings import AUTO_APPROVE_REELS
+from app.services.moderation_alerts import notify_reel_decision
+from app.services.reel_lifecycle_service import start_offer_clock
 from app.services.settings_service import is_auto_approve_enabled, set_setting
 
 logger = logging.getLogger("fyndo.admin")
@@ -56,7 +60,7 @@ async def _highlights(db: AsyncSession) -> list:
                 .select_from(Reel)
                 .where(Reel.status == ReelStatus.PENDING_MODERATION.value),
             ),
-            "href": "/admin/reels",
+            "href": "/admin/moderation",
             "tone": "warn",
         },
         {
@@ -124,6 +128,104 @@ async def toggle_auto_approve(
         source="admin_panel",
     )
     return RedirectResponse("/admin/", status_code=303)
+
+
+@router.get("/moderation")
+async def moderation_view(
+    request: Request,
+    status: str = "PENDING_MODERATION",
+    db: AsyncSession = Depends(get_db),
+    admin: Dict[str, Any] = Depends(current_admin),
+):
+    stmt = (
+        select(Reel)
+        .options(selectinload(Reel.merchant), selectinload(Reel.coupon_template))
+        .order_by(Reel.created_at.desc())
+    )
+    filter_norm = status.upper().strip()
+    if filter_norm != "ALL":
+        try:
+            status_enum = ReelStatus(filter_norm)
+            stmt = stmt.where(Reel.status == status_enum)
+        except ValueError:
+            pass
+
+    reels = (await db.execute(stmt)).scalars().all()
+    pending_count = await _scalar(
+        db,
+        select(func.count()).select_from(Reel).where(Reel.status == ReelStatus.PENDING_MODERATION)
+    )
+
+    return templates.TemplateResponse(
+        request,
+        "moderation.html",
+        panel_context(
+            request,
+            admin,
+            reels=reels,
+            current_filter=filter_norm,
+            pending_count=pending_count,
+        ),
+    )
+
+
+@router.post("/moderation/reels/{reel_id}/approve")
+async def approve_reel_action(
+    reel_id: uuid.UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    admin: Dict[str, Any] = Depends(current_admin),
+):
+    live = (selectinload(Reel.merchant), selectinload(Reel.coupon_template))
+    reel = (await db.execute(select(Reel).options(*live).where(Reel.id == reel_id))).scalars().first()
+    if reel:
+        reel.status = ReelStatus.APPROVED
+        reel.rejection_reason = None
+        if reel.expires_at is None:
+            start_offer_clock(reel, reel.coupon_template)
+        await db.flush()
+        audit_log(
+            "reel.moderate",
+            actor_role="SUPER_ADMIN",
+            target_type="reel",
+            target_id=reel.id,
+            decision="APPROVE",
+            status="APPROVED",
+        )
+        owner_id = reel.merchant.user_id if reel.merchant else None
+        await notify_reel_decision(db, reel=reel, owner_id=owner_id, decision="APPROVE")
+        await db.commit()
+    return RedirectResponse(url="/admin/moderation?ok=Reel+approved+and+published+live", status_code=303)
+
+
+@router.post("/moderation/reels/{reel_id}/reject")
+async def reject_reel_action(
+    reel_id: uuid.UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    admin: Dict[str, Any] = Depends(current_admin),
+):
+    form = await request.form()
+    reason = str(form.get("rejection_reason") or "Violated content or audio guidelines.").strip()
+    live = (selectinload(Reel.merchant), selectinload(Reel.coupon_template))
+    reel = (await db.execute(select(Reel).options(*live).where(Reel.id == reel_id))).scalars().first()
+    if reel:
+        reel.status = ReelStatus.REJECTED
+        reel.rejection_reason = reason
+        await db.flush()
+        audit_log(
+            "reel.moderate",
+            actor_role="SUPER_ADMIN",
+            target_type="reel",
+            target_id=reel.id,
+            decision="REJECT",
+            status="REJECTED",
+            rejection_reason=reason,
+        )
+        owner_id = reel.merchant.user_id if reel.merchant else None
+        await notify_reel_decision(db, reel=reel, owner_id=owner_id, decision="REJECT")
+        await db.commit()
+    return RedirectResponse(url="/admin/moderation?ok=Reel+rejected", status_code=303)
 
 
 @router.get("/{model_key}")

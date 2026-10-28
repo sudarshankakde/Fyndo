@@ -212,3 +212,54 @@ async def test_dashboard_auto_approve_toggle(client: AsyncClient):
     await client.post("/admin/settings/auto-approve", data={})
     async with async_session_factory() as session:
         assert await is_auto_approve_enabled(session) is False
+
+
+@pytest.mark.asyncio
+async def test_moderation_queue_and_actions(client: AsyncClient):
+    from app.core.database import async_session_factory
+    from app.models import Reel, ReelStatus
+    from tests.feature_helpers import bearer, reel_payload, seed_store
+
+    await _sign_in(client)
+
+    # 1. Moderation list renders
+    page = await client.get("/admin/moderation")
+    assert page.status_code == 200
+    assert "Reel Moderation" in page.text
+
+    # 2. Seed store and reel via API
+    store = await seed_store()
+    create_resp = await client.post(
+        "/api/v1/reels",
+        json=reel_payload(title="Super Sale Reel"),
+        headers=bearer(store.owner_token),
+    )
+    assert create_resp.status_code in (200, 201), create_resp.text
+    reel_id = create_resp.json()["data"]["reel_id"]
+
+    # 3. View moderation queue shows reel
+    queue_resp = await client.get("/admin/moderation?status=PENDING_MODERATION")
+    assert queue_resp.status_code == 200
+    assert "Super Sale Reel" in queue_resp.text
+
+    # 4. Reject action
+    reject_resp = await client.post(
+        f"/admin/moderation/reels/{reel_id}/reject",
+        data={"rejection_reason": "Low resolution"},
+    )
+    assert reject_resp.status_code == 303
+    assert "/admin/moderation" in reject_resp.headers["location"]
+
+    async with async_session_factory() as session:
+        updated = await session.get(Reel, uuid.UUID(reel_id))
+        assert updated.status == ReelStatus.REJECTED
+        assert updated.rejection_reason == "Low resolution"
+
+    # 5. Approve action
+    approve_resp = await client.post(f"/admin/moderation/reels/{reel_id}/approve")
+    assert approve_resp.status_code == 303
+
+    async with async_session_factory() as session:
+        approved = await session.get(Reel, uuid.UUID(reel_id))
+        assert approved.status == ReelStatus.APPROVED
+        assert approved.rejection_reason is None

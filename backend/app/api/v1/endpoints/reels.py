@@ -106,12 +106,17 @@ async def list_my_reels(
 
     template_ids = [r.coupon_template.id for r in reels if r.coupon_template]
     counts_map = await coupon_counts_for_templates(db, template_ids)
+    reel_ids = [r.id for r in reels]
+    like_counts = await _count_map(db, ReelLike, reel_ids)
+    comment_counts = await _count_map(db, ReelComment, reel_ids)
 
     # Map to schema and inject merchant metadata & attached coupon
     reel_list = []
     for reel in reels:
         out = ReelManagementOut.model_validate(reel)
         out.status = getattr(reel.status, "value", str(reel.status))
+        out.likes_count = int(like_counts.get(reel.id, 0))
+        out.comments_count = int(comment_counts.get(reel.id, 0))
         if reel.merchant:
             out.merchant_name = reel.merchant.business_name
             out.sector = getattr(reel.merchant.sector, "value", str(reel.merchant.sector))

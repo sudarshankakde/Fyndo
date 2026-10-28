@@ -117,6 +117,19 @@ async def create_reel(
         )
 
     thumbnail_url = request.thumbnail_url or settings.DEFAULT_REEL_THUMBNAIL_URL
+    if not thumbnail_url and request.video_url:
+        import os
+        from app.services.media_service import generate_video_thumbnail, upload_root
+        video_rel = request.video_url.lstrip("/")
+        if video_rel.startswith("uploads/"):
+            video_rel = video_rel[len("uploads/") :]
+        video_abs = os.path.join(upload_root(), video_rel)
+        if os.path.exists(video_abs):
+            thumb_name = f"{uuid.uuid4().hex[:12]}.webp"
+            thumb_abs = os.path.join(upload_root(), "reels", thumb_name)
+            if generate_video_thumbnail(video_abs, thumb_abs):
+                thumbnail_url = f"/uploads/reels/{thumb_name}"
+
     if not thumbnail_url:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

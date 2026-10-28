@@ -240,6 +240,7 @@ def store_upload(upload: UploadFile, folder: str, sync_cdn: bool = True) -> Dict
         
         return {
             "url": final_url,
+            "local_url": f"/uploads/{folder}/{unique_name}",
             "thumbnail_url": final_thumb,
             "cloudinary_public_id": public_id,
             "filename": unique_name,
@@ -251,6 +252,8 @@ def store_upload(upload: UploadFile, folder: str, sync_cdn: bool = True) -> Dict
 
     return {
         "url": f"/uploads/{folder}/{unique_name}",
+        "local_url": f"/uploads/{folder}/{unique_name}",
+        "thumbnail_url": thumbnail_url,
         "filename": unique_name,
         "size_bytes": size_bytes,
         "folder": folder,

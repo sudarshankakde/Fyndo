@@ -70,8 +70,8 @@ class Settings(BaseSettings):
 
     # Media pipeline
     UPLOAD_ROOT: str = "uploads"
-    MEDIA_MAX_VIDEO_MB: int = 60
-    MEDIA_MAX_IMAGE_MB: int = 8
+    MEDIA_MAX_VIDEO_MB: int = 200
+    MEDIA_MAX_IMAGE_MB: int = 15
     MEDIA_CHUNK_BYTES: int = 1024 * 1024
     DEFAULT_REEL_THUMBNAIL_URL: Optional[str] = None
     REEL_MIN_SECONDS: int = 15
@@ -87,7 +87,7 @@ class Settings(BaseSettings):
     # How often expired reel offers are checked; 0 disables the background sweep.
     REEL_LIFECYCLE_SWEEP_SECONDS: int = 300
     POS_RATE_LIMIT_PER_MIN: int = 30
-    MAX_REQUEST_BYTES: int = 80 * 1024 * 1024
+    MAX_REQUEST_BYTES: int = 250 * 1024 * 1024
 
     # Logging (console always; size-rotated files when LOG_TO_FILE)
     LOG_LEVEL: str = "INFO"

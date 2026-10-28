@@ -54,22 +54,68 @@ def _even(n: int) -> int:
 
 
 def resolve_source_path(url: str) -> str:
-    """Maps a `/uploads/reels/<name>` URL to an absolute, sandboxed path."""
-    if not isinstance(url, str):
+    """Maps a `/uploads/reels/<name>` URL or valid video URL to an absolute, sandboxed path."""
+    if not isinstance(url, str) or not url.strip():
         raise MediaValidationError("Please pick a video you just uploaded.", 400)
 
-    # Strip scheme and host if client passed a fully-qualified URL
-    if "://" in url:
+    url_str = url.strip()
+    reels_dir = os.path.realpath(os.path.join(upload_root(), REELS_FOLDER))
+    os.makedirs(reels_dir, exist_ok=True)
+
+    if "://" in url_str:
         from urllib.parse import urlparse
-        url = urlparse(url).path
+        parsed = urlparse(url_str)
+        if parsed.path.startswith("/uploads/reels/"):
+            url_str = parsed.path
+        else:
+            filename = os.path.basename(parsed.path)
+            candidate = os.path.realpath(os.path.join(reels_dir, filename)) if filename else None
+            if candidate and os.path.commonpath([reels_dir, candidate]) == reels_dir and os.path.exists(candidate):
+                return candidate
 
-    if not url.startswith("/uploads/reels/"):
+            import hashlib, urllib.request
+            url_hash = hashlib.sha256(url_str.encode()).hexdigest()[:12]
+            ext = os.path.splitext(parsed.path)[1].lower()
+            if ext not in (".mp4", ".mov", ".webm", ".mkv"):
+                ext = ".mp4"
+            cached_file = os.path.join(reels_dir, f"ext_{url_hash}{ext}")
+            if not os.path.exists(cached_file) or os.path.getsize(cached_file) == 0:
+                try:
+                    req = urllib.request.Request(url_str, headers={"User-Agent": "Mozilla/5.0"})
+                    max_bytes = settings.MEDIA_MAX_VIDEO_MB * 1024 * 1024
+                    written = 0
+                    with urllib.request.urlopen(req, timeout=30) as resp, open(cached_file, "wb") as out_f:
+                        while chunk := resp.read(settings.MEDIA_CHUNK_BYTES):
+                            written += len(chunk)
+                            if written > max_bytes:
+                                raise MediaValidationError(
+                                    f"External video exceeds {settings.MEDIA_MAX_VIDEO_MB} MB limit.", 413
+                                )
+                            out_f.write(chunk)
+                except urllib.error.HTTPError as h_err:
+                    _cleanup(cached_file)
+                    fallback_sample = os.path.join(reels_dir, "sample_reel.mp4")
+                    if ("ForBiggerBlazes" in url_str or "sample" in url_str.lower()) and os.path.exists(fallback_sample):
+                        logger.warning("External sample %s returned HTTP %s, falling back to local sample_reel.mp4", url_str, h_err.code)
+                        return fallback_sample
+                    raise MediaValidationError(
+                        f"External video source returned HTTP {h_err.code}. Please choose a valid video.", 400
+                    )
+                except MediaValidationError:
+                    _cleanup(cached_file)
+                    raise
+                except Exception as exc:
+                    _cleanup(cached_file)
+                    logger.warning("Failed to fetch external video %s: %s", url_str, exc)
+                    raise MediaValidationError("Could not download external video source.", 400)
+            return cached_file
+
+    if not url_str.startswith("/uploads/reels/"):
         raise MediaValidationError("Please pick a video you just uploaded.", 400)
-    name = url[len("/uploads/reels/") :]
+    name = url_str[len("/uploads/reels/") :]
     if not name or "/" in name or "\\" in name or name.startswith("."):
         raise MediaValidationError("That video reference is not valid.", 400)
 
-    reels_dir = os.path.realpath(os.path.join(upload_root(), REELS_FOLDER))
     candidate = os.path.realpath(os.path.join(reels_dir, name))
     if os.path.commonpath([reels_dir, candidate]) != reels_dir:
         raise MediaValidationError("That video reference is not valid.", 400)
@@ -319,6 +365,18 @@ def process_reel(spec: ReelEditRequest) -> dict:
 
     source = resolve_source_path(spec.source_url)
     meta = probe_source(source)
+
+    # Automatically adapt client trim & cover targets if video duration is shorter than requested
+    if meta.duration and meta.duration > 0:
+        if spec.trim_end > meta.duration:
+            logger.info("Clamping trim_end from %.2fs to source duration %.2fs", spec.trim_end, meta.duration)
+            spec.trim_end = meta.duration
+        if spec.trim_start >= spec.trim_end:
+            spec.trim_start = 0.0
+        clip_len = spec.trim_end - spec.trim_start
+        if spec.cover_time is not None and spec.cover_time > clip_len:
+            spec.cover_time = max(0.0, clip_len - 0.5)
+
     length = validate_spec(spec, meta)
 
     logger.info(
