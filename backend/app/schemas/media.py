@@ -49,6 +49,7 @@ class ReelEditRequest(BaseModel):
     crop: Optional[ReelCropBox] = None
     cover_time: Optional[float] = Field(None, ge=0.0)
     mute: bool = False
+    music_track: Optional[str] = None
     look: Optional[ReelLook] = None
     previous_output_url: Optional[str] = None
 

@@ -12,6 +12,7 @@ from app.core.database import get_db
 from app.core.rate_limit import rate_limit
 from app.models.merchant import Merchant, MerchantStaff
 from app.models.reel import Reel, ReelStatus
+from app.models.reel_engagement import ReelComment, ReelLike
 from app.models.user import User
 from app.schemas.common import ResponseEnvelope
 from app.schemas.reel import (
@@ -21,8 +22,10 @@ from app.schemas.reel import (
     ReelOut,
     ReelUpdateRequest,
 )
+from app.services.category_assets import get_default_logo_url
 from app.services.cloudinary_service import CloudinaryService
-from app.services.reel_feed_service import build_feed
+from app.services.merchant_engagement_service import coupon_counts_for_templates
+from app.services.reel_feed_service import _count_map, _hydrate_user_likes, build_feed
 from app.services.reel_lifecycle_service import live_offer_clause
 
 router = APIRouter()
@@ -31,8 +34,8 @@ router = APIRouter()
 async def _merchant_for(db: AsyncSession, user: User) -> Merchant | None:
     result = await db.execute(select(Merchant).where(Merchant.user_id == user.id))
     merchant = result.scalars().first()
-    if not merchant:
-        staff_res = await db.execute(select(MerchantStaff).where(MerchantStaff.user_id == user.id))
+    if not merchant and user.phone:
+        staff_res = await db.execute(select(MerchantStaff).where(MerchantStaff.phone == user.phone))
         staff = staff_res.scalars().first()
         if staff:
             merchant = await db.get(Merchant, staff.merchant_id)
@@ -49,6 +52,7 @@ async def get_proximity_feed(
     sector: str | None = Query(None),
     limit: int = Query(20, ge=1, le=50),
     cursor: str | None = Query(None),
+    merchant_id: uuid.UUID | None = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: User | None = Depends(get_optional_user),
     _: None = Depends(rate_limit("feed", settings.FEED_RATE_LIMIT_PER_MIN)),
@@ -64,6 +68,7 @@ async def get_proximity_feed(
             sector=sector,
             limit=limit,
             cursor=cursor,
+            merchant_id=merchant_id,
             current_user=current_user,
         )
     except (ValueError, KeyError, TypeError):
@@ -97,12 +102,15 @@ async def list_my_reels(
     reels = (
         await db.execute(
             select(Reel)
-            .where(Reel.merchant_id == merchant.id)
+            .where(Reel.merchant_id == merchant.id, Reel.deleted_at.is_(None))
             .options(selectinload(Reel.merchant), selectinload(Reel.coupon_template))
             .order_by(Reel.created_at.desc())
             .limit(200)
         )
     ).scalars().all()
+
+    template_ids = [r.coupon_template.id for r in reels if r.coupon_template]
+    counts_map = await coupon_counts_for_templates(db, template_ids)
 
     # Map to schema and inject merchant metadata & attached coupon
     reel_list = []
@@ -114,30 +122,40 @@ async def list_my_reels(
             out.sector = getattr(reel.merchant.sector, "value", str(reel.merchant.sector))
             out.city = reel.merchant.city
         coupon = reel.coupon_template
-        if coupon and coupon.is_active:
-            out.coupon = CouponFeedSummary(
-                id=coupon.id,
-                title=coupon.title,
-                discount_type=getattr(coupon.discount_type, "value", str(coupon.discount_type)),
-                discount_value=float(coupon.discount_value),
-                min_order_amount=float(coupon.min_order_amount),
-                validity_days=coupon.validity_days,
-                expires_at=coupon.expires_at,
-            )
+        if coupon:
+            claims, redemptions = counts_map.get(coupon.id, (0, 0))
+            out.claims_count = claims
+            out.redemptions_count = redemptions
+            if coupon.is_active:
+                out.coupon = CouponFeedSummary(
+                    id=coupon.id,
+                    title=coupon.title,
+                    discount_type=getattr(coupon.discount_type, "value", str(coupon.discount_type)),
+                    discount_value=float(coupon.discount_value),
+                    min_order_amount=float(coupon.min_order_amount),
+                    validity_days=coupon.validity_days,
+                    expires_at=coupon.expires_at,
+                    terms=coupon.terms,
+                )
         reel_list.append(out)
 
     return ResponseEnvelope(data=reel_list)
 
 
 @router.get("/reels/{reel_id}", response_model=ResponseEnvelope[ReelOut])
-async def get_reel(reel_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+async def get_reel(
+    reel_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = Depends(get_optional_user),
+):
+    merchant = await _merchant_for(db, current_user) if current_user else None
+
     reel = (
         await db.execute(
-            select(Reel).where(
+            select(Reel)
+            .where(
                 Reel.id == reel_id,
-                Reel.status == ReelStatus.APPROVED,
                 Reel.deleted_at.is_(None),
-                live_offer_clause(),
             )
             .options(selectinload(Reel.merchant), selectinload(Reel.coupon_template))
         )
@@ -145,10 +163,18 @@ async def get_reel(reel_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     if not reel or not reel.merchant:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Reel not found.")
 
-    merchant = reel.merchant
+    is_owner = bool(merchant and reel.merchant_id == merchant.id)
+    if not is_owner:
+        if reel.status != ReelStatus.APPROVED:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Reel not found.")
+        now = datetime.now(timezone.utc)
+        if reel.expires_at and reel.expires_at <= now:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Reel has expired.")
+
+    merchant_obj = reel.merchant
     coupon = reel.coupon_template
     coupon_summary = None
-    if coupon and coupon.is_active:
+    if coupon and (coupon.is_active or is_owner):
         coupon_summary = CouponFeedSummary(
             id=coupon.id,
             title=coupon.title,
@@ -157,32 +183,42 @@ async def get_reel(reel_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
             min_order_amount=float(coupon.min_order_amount),
             validity_days=coupon.validity_days,
             expires_at=coupon.expires_at,
+            terms=coupon.terms,
         )
 
     v_url = CloudinaryService.get_optimized_video_url(reel.video_url) or reel.video_url
     hls_url = getattr(reel, "video_hls_url", None) or CloudinaryService.get_hls_url(
         public_id=getattr(reel, "cloudinary_public_id", None), video_url=reel.video_url
     )
-    return ResponseEnvelope(
-        data=ReelOut(
-            id=reel.id,
-            title=reel.title,
-            video_url=v_url,
-            video_hls_url=hls_url,
-            thumbnail_url=reel.thumbnail_url,
-            duration_seconds=reel.duration_seconds,
-            views_count=reel.views_count,
-            allow_comments=reel.allow_comments,
-            merchant=MerchantFeedSummary(
-                id=merchant.id,
-                business_name=merchant.business_name,
-                sector=getattr(merchant.sector, "value", str(merchant.sector)),
-                address=merchant.address_text,
-                distance_meters=0,
-            ),
-            coupon=coupon_summary,
-        )
+    merchant_sector = getattr(merchant_obj.sector, "value", str(merchant_obj.sector))
+    like_counts = await _count_map(db, ReelLike, [reel.id])
+    comment_counts = await _count_map(db, ReelComment, [reel.id])
+    out = ReelOut(
+        id=reel.id,
+        title=reel.title,
+        video_url=v_url,
+        video_hls_url=hls_url,
+        thumbnail_url=reel.thumbnail_url,
+        duration_seconds=reel.duration_seconds,
+        views_count=reel.views_count,
+        likes_count=int(like_counts.get(reel.id, 0)),
+        is_liked=False,
+        is_bookmarked=False,
+        allow_comments=reel.allow_comments,
+        comments_count=int(comment_counts.get(reel.id, 0)),
+        status=getattr(reel.status, "value", str(reel.status)),
+        merchant=MerchantFeedSummary(
+            id=merchant_obj.id,
+            business_name=merchant_obj.business_name,
+            sector=merchant_sector,
+            address=merchant_obj.address_text,
+            distance_meters=0,
+            logo_url=merchant_obj.logo_url or get_default_logo_url(merchant_sector),
+        ),
+        coupon=coupon_summary,
     )
+    hydrated = await _hydrate_user_likes(db, [out], current_user)
+    return ResponseEnvelope(data=hydrated[0])
 
 
 @router.patch("/reels/{reel_id}", response_model=ResponseEnvelope[ReelManagementOut])

@@ -18,12 +18,14 @@ from app.models.reel import AudioType, Reel, ReelStatus
 from app.models.user import User
 from app.schemas.common import ResponseEnvelope
 from app.schemas.reel import (
+    CouponFeedSummary,
     ReelCreateRequest,
     ReelExtendRequest,
     ReelExtendResponse,
     ReelManagementOut,
 )
 from app.services.cloudinary_service import CloudinaryService
+from app.services.merchant_engagement_service import coupon_counts_for_templates
 from app.services.reel_lifecycle_service import (
     OfferExtensionError,
     extend_offer,
@@ -233,13 +235,38 @@ async def list_expiring_reels(
                 Reel.expires_at <= now,
                 Reel.grace_period_until > now,
             )
+            .options(selectinload(Reel.merchant), selectinload(Reel.coupon_template))
             .order_by(Reel.grace_period_until.asc())
         )
     ).scalars().all()
+
+    template_ids = [r.coupon_template.id for r in reels if r.coupon_template]
+    counts_map = await coupon_counts_for_templates(db, template_ids)
+
     items = []
     for reel in reels:
         out = ReelManagementOut.model_validate(reel)
         out.status = getattr(reel.status, "value", str(reel.status))
         out.is_expired = True
+        if reel.merchant:
+            out.merchant_name = reel.merchant.business_name
+            out.sector = getattr(reel.merchant.sector, "value", str(reel.merchant.sector))
+            out.city = reel.merchant.city
+        coupon = reel.coupon_template
+        if coupon:
+            claims, redemptions = counts_map.get(coupon.id, (0, 0))
+            out.claims_count = claims
+            out.redemptions_count = redemptions
+            if coupon.is_active:
+                out.coupon = CouponFeedSummary(
+                    id=coupon.id,
+                    title=coupon.title,
+                    discount_type=getattr(coupon.discount_type, "value", str(coupon.discount_type)),
+                    discount_value=float(coupon.discount_value),
+                    min_order_amount=float(coupon.min_order_amount),
+                    validity_days=coupon.validity_days,
+                    expires_at=coupon.expires_at,
+                    terms=coupon.terms,
+                )
         items.append(out)
     return ResponseEnvelope(data=items)

@@ -93,6 +93,7 @@ class UserCouponWalletItem(BaseModel):
     claimed_at: datetime
     expires_at: datetime
     is_expired: bool
+    terms: Optional[str] = None
 
     model_config = {"from_attributes": True}
 

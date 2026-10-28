@@ -150,6 +150,33 @@ class PublicMerchantOut(BaseModel):
     is_following: bool = False
     rating_average: float = 0.0
     rating_count: int = 0
+    phone: Optional[str] = None
+    website: Optional[str] = None
+    business_hours: Optional[str] = None
+    description: Optional[str] = None
+    sub_categories: Optional[List[str]] = None
+
+    @field_validator("sub_categories", mode="before")
+    @classmethod
+    def parse_sub_categories(cls, v):
+        if v is None:
+            return []
+        if isinstance(v, list):
+            return v
+        if isinstance(v, str):
+            v = v.strip()
+            if not v:
+                return []
+            try:
+                parsed = json.loads(v)
+                if isinstance(parsed, list):
+                    return parsed
+            except Exception:
+                pass
+            return [s.strip() for s in v.split(",") if s.strip()]
+        return []
+
+    model_config = {"from_attributes": True}
 
 
 class AdminMerchantKycItem(BaseModel):

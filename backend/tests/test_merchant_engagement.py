@@ -134,3 +134,33 @@ async def test_ratings_validate_upsert_and_aggregate(client):
 
     public = (await client.get(f"/api/v1/merchants/{store.merchant_id}")).json()["data"]
     assert public["rating_average"] == 4.5 and public["rating_count"] == 2
+
+
+@pytest.mark.asyncio
+async def test_public_merchant_contact_and_about_fields(client):
+    store = await seed_store()
+
+    # Check default (no store phone set yet) -> falls back to owner's phone
+    public1 = (await client.get(f"/api/v1/merchants/{store.merchant_id}")).json()["data"]
+    assert public1["phone"] is not None and public1["phone"].startswith("+91")
+
+    # Update profile with custom phone, description, and business_hours
+    update_res = await client.patch(
+        "/api/v1/merchants/profile",
+        json={
+            "phone": "+91 99999 88888",
+            "description": "Authentic sourdough bakery",
+            "business_hours": "Mon-Sat 9am-9pm",
+            "website": "https://bakery.example.com",
+            "sub_categories": ["Bakery", "Artisan"],
+        },
+        headers=bearer(store.owner_token),
+    )
+    assert update_res.status_code == 200
+
+    public2 = (await client.get(f"/api/v1/merchants/{store.merchant_id}")).json()["data"]
+    assert public2["phone"] == "+91 99999 88888"
+    assert public2["description"] == "Authentic sourdough bakery"
+    assert public2["business_hours"] == "Mon-Sat 9am-9pm"
+    assert public2["website"] == "https://bakery.example.com"
+    assert public2["sub_categories"] == ["Bakery", "Artisan"]

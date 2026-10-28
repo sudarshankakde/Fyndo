@@ -45,12 +45,30 @@ CREATE TABLE users (
     phone VARCHAR(15) UNIQUE NOT NULL,            -- Formatted as +91XXXXXXXXXX
     full_name VARCHAR(100) NULL,
     email VARCHAR(255) NULL,
+    username VARCHAR(50) NULL,
+    profile_image_url VARCHAR(500) NULL,
+    city VARCHAR(50) NULL,
+    latitude DOUBLE PRECISION NULL,
+    longitude DOUBLE PRECISION NULL,
+    pincode VARCHAR(10) NULL,
+    shopping_preferences JSONB NULL,
+    onboarding_completed BOOLEAN NOT NULL DEFAULT false,
     role VARCHAR(20) NOT NULL DEFAULT 'SHOPPER',  -- SHOPPER, MERCHANT, SUPER_ADMIN
     preferred_language VARCHAR(5) NOT NULL DEFAULT 'en', -- en, hi, mr
     is_active BOOLEAN NOT NULL DEFAULT true,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+```
+`GET /api/v1/auth/me` returns the authenticated user object enriched with real engagement metrics:
+```json
+{
+  "metrics": {
+    "total_saved": 450,
+    "offers_claimed": 3,
+    "stores_visited": 2
+  }
+}
 ```
 
 #### 2. `merchants`
@@ -307,6 +325,23 @@ sequenceDiagram
 - Refresh tokens are issued in an `HttpOnly` cookie with `SameSite=Lax` in development
   and `SameSite=Strict; Secure` in production. Clients should send requests with credentials.
 
+### Shopper API Contracts
+- `GET /api/v1/merchants`: lists public stores, supports query params `city`, `lat`, `lon`, `radius_km`, `sector`.
+- `GET /api/v1/merchants/cities`: lists active cities with store counts, latitude, and longitude (`CityShopCount`).
+- `GET /api/v1/merchants/categories`: lists primary store categories and their sub-categories.
+- `GET /api/v1/merchants/following`: lists stores followed by the authenticated shopper.
+- `GET /api/v1/reels/saved`: lists reels bookmarked by the authenticated shopper.
+- `POST /api/v1/reels/{id}/like`: toggles like status for authenticated user.
+- `POST /api/v1/reels/{id}/bookmark`: toggles saved/bookmark status for authenticated user.
+- `GET /api/v1/reels/{id}/comments`: paginated comments for the reel.
+- `POST /api/v1/reels/{id}/comments`: adds a comment if `allow_comments` is true.
+- `GET /api/v1/notifications`: lists in-app notifications for the shopper.
+- `POST /api/v1/notifications/{id}/read`: marks a specific notification as read.
+- `POST /api/v1/notifications/read-all`: marks all notifications as read.
+- `GET /api/v1/redemptions/my-history`: lists user's redeemed offer history.
+- `PATCH /api/v1/auth/profile`: updates shopper profile (`full_name`, `username`, `email`, `city`, `pincode`, `shopping_preferences`, `profile_image_url`).
+- `GET /api/v1/media/config`: provides client media limits and direct-upload configuration.
+
 ---
 
 ### Flow 2: Merchant Studio & Cloudinary Ingestion Flow
@@ -386,11 +421,12 @@ sequenceDiagram
     participant API as Fyndo FastAPI
     participant DB as PostgreSQL DB
 
-    Shopper->>API: GET /api/v1/reels/feed?lat=21.1460&lon=79.0880&radius_km=5&sector=FOOD
-    API->>DB: Query APPROVED, not deleted, (expires_at IS NULL OR expires_at > now) reels in bounding box
+    Note over Shopper, API: Sector is RESTAURANTS_DINING ('FOOD' is legacy alias). Params: lat, lon, radius_km, sector, city, cursor, limit, merchant_id
+    Shopper->>API: GET /api/v1/reels/feed?lat=21.1460&lon=79.0880&radius_km=5&sector=RESTAURANTS_DINING
+    API->>DB: Query APPROVED, not deleted, (expires_at IS NULL OR expires_at > now) reels in bounding box (or by merchant_id)
     API->>API: Calculate Haversine / PostGIS ST_Distance
-    API->>API: Filter to radius (<= 5000m) & sort ascending by distance
-    API-->>Shopper: 200 OK [ List of reels with distance_meters & active coupon ]
+    API->>API: Filter to radius (<= 5000m) & sort ascending by distance (skipped if merchant_id is set)
+    API-->>Shopper: 200 OK [ List of reels with likes_count, is_liked, is_bookmarked, comments_count, video_hls_url, allow_comments, merchant.logo_url, coupon.terms ]
 
     Shopper->>API: POST /api/v1/coupons/{template_id}/claim (Bearer Shopper Token)
     API->>API: Reject if template inactive (404) or offer ended (410)
@@ -401,8 +437,8 @@ sequenceDiagram
     API-->>Shopper: 200 OK { user_coupon_id, status: "CLAIMED", expires_at }
 
     Shopper->>API: GET /api/v1/coupons/wallet
-    API->>DB: Query user_coupons for user_id with merchant details
-    API-->>Shopper: 200 OK [ List of wallet coupons with status & expiry ]
+    API->>DB: Query user_coupons for user_id with merchant details and template terms
+    API-->>Shopper: 200 OK [ List of wallet coupons with status, expiry & terms ]
 ```
 
 ---
@@ -463,8 +499,8 @@ sequenceDiagram
 
     Note over Shopper, DB: Shopper opens the storefront
     Shopper->>API: GET /api/v1/merchants/{id} (token optional)
-    API->>DB: Store + COUNT(followers) + is_following + AVG/COUNT(ratings)
-    API-->>Shopper: 200 OK { profile_video_url, followers_count, is_following, rating_average, rating_count }
+    API->>DB: Store + phone (fallback to owner phone) + website + hours + description + tags + is_following + ratings
+    API-->>Shopper: 200 OK { phone, website, business_hours, description, sub_categories, profile_video_url, followers_count, is_following, rating_average, rating_count }
 
     Shopper->>API: POST /api/v1/merchants/{id}/follow
     alt not following yet
@@ -483,7 +519,7 @@ sequenceDiagram
     else repeat tap
         API-->>Shopper: { counted: false }
     end
-    Shopper->>Shopper: Open phone dialer
+    Shopper->>Shopper: Open phone dialer with tel:{merchant.phone} from GET /merchants/{id}
 
     Shopper->>API: POST /api/v1/merchants/{id}/rate { rating: 4, review_text }
     API->>DB: Upsert merchant_ratings (one row per shopper per store)

@@ -87,7 +87,8 @@ async def get_user_wallet(
                 status=current_status,
                 claimed_at=c.claimed_at,
                 expires_at=c.expires_at,
-                is_expired=is_expired
+                is_expired=is_expired,
+                terms=tmpl.terms if tmpl else None,
             )
         )
 

@@ -91,6 +91,50 @@ def test_edit_request_rejects_zero_length_trim():
         ReelEditRequest(source_url="/uploads/reels/a.mp4", trim_start=5, trim_end=5)
 
 
+def test_validate_spec_trim_end_equals_duration_and_slack_overshoot():
+    meta = _meta(duration=20.0)
+    # trim_end == duration
+    exact = ReelEditRequest(source_url="/uploads/reels/a.mp4", trim_start=0, trim_end=20.0)
+    assert svc.validate_spec(exact, meta) == 20.0
+
+    # trim_end slightly overshoots by <= _WINDOW_SLACK_SECONDS (0.1s) -> clamped to 20.0
+    slack = ReelEditRequest(source_url="/uploads/reels/a.mp4", trim_start=0, trim_end=20.08)
+    length = svc.validate_spec(slack, meta)
+    assert length == 20.0
+    assert slack.trim_end == 20.0
+
+
+def test_validate_spec_beyond_slack_reports_real_duration_in_error():
+    meta = _meta(duration=20.3)
+    overshoot = ReelEditRequest(source_url="/uploads/reels/a.mp4", trim_start=0, trim_end=60.0)
+    with pytest.raises(MediaValidationError) as exc_info:
+        svc.validate_spec(overshoot, meta)
+    assert exc_info.value.status_code == 400
+    assert "The video is 20.3s long; the chosen clip ends at 60.0s." in str(exc_info.value)
+
+
+def test_validate_spec_cover_time_bounds():
+    meta = _meta(duration=30.0)
+    # Valid cover offset within clip [0, 20]
+    valid_cover = ReelEditRequest(source_url="/uploads/reels/a.mp4", trim_start=0, trim_end=20.0, cover_time=5.0)
+    assert svc.validate_spec(valid_cover, meta) == 20.0
+
+    # Cover time outside clip length
+    invalid_cover = ReelEditRequest(source_url="/uploads/reels/a.mp4", trim_start=0, trim_end=20.0, cover_time=25.0)
+    with pytest.raises(MediaValidationError) as exc_info:
+        svc.validate_spec(invalid_cover, meta)
+    assert exc_info.value.status_code == 400
+    assert "cover photo moment is outside the clip" in str(exc_info.value).lower()
+
+
+def test_probe_source_unreadable_file_raises_400(tmp_path):
+    garbage = tmp_path / "corrupt.mp4"
+    garbage.write_bytes(b"not a valid video container")
+    with pytest.raises(MediaValidationError) as exc_info:
+        svc.probe_source(str(garbage))
+    assert exc_info.value.status_code == 400
+
+
 def test_crop_box_must_stay_inside_frame():
     with pytest.raises(ValueError):
         ReelCropBox(x=0.8, y=0.0, w=0.5, h=1.0)

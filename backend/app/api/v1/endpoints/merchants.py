@@ -562,6 +562,8 @@ async def get_public_merchant(
     if not merchant:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Merchant storefront not found.")
 
+    owner = await db.get(User, merchant.user_id)
+    phone = (merchant.phone or "").strip() or (owner.phone if owner else None)
     ratings = await engagement.rating_summary(db, merchant.id)
     return ResponseEnvelope(
         data=PublicMerchantOut(
@@ -580,5 +582,10 @@ async def get_public_merchant(
             is_following=await engagement.is_following(db, merchant.id, current_user),
             rating_average=ratings["average"],
             rating_count=ratings["count"],
+            phone=phone,
+            website=merchant.website,
+            business_hours=merchant.business_hours,
+            description=merchant.description,
+            sub_categories=merchant.sub_categories,
         )
     )
