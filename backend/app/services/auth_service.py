@@ -50,7 +50,26 @@ class AuthService:
             return
 
         norm_role = role.strip().lower()
-        if norm_role not in ("shopper", "customer", "merchant"):
+        if norm_role not in ("shopper", "customer", "merchant", "cashier", "staff"):
+            return
+
+        if norm_role in ("cashier", "staff"):
+            staff_res = await db.execute(select(MerchantStaff).where(MerchantStaff.phone == phone))
+            staff = staff_res.scalars().first()
+            if not staff:
+                user_res = await db.execute(select(User).where(User.phone == phone))
+                owner = user_res.scalars().first()
+                if owner:
+                    merch_res = await db.execute(select(Merchant).where(Merchant.user_id == owner.id))
+                    merchant = merch_res.scalars().first()
+                    if merchant:
+                        staff_res = await db.execute(select(MerchantStaff).where(MerchantStaff.merchant_id == merchant.id))
+                        staff = staff_res.scalars().first()
+            if not staff:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="No registered store or counter staff found for this mobile number.",
+                )
             return
 
         stmt = select(User).where(User.phone == phone)
@@ -181,6 +200,15 @@ class AuthService:
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="The 6-digit staff PIN entered is incorrect."
             )
+
+        if request.otp:
+            is_valid = await OtpService.verify_otp(lookup_phone, request.otp)
+            if not is_valid:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="The 6-digit OTP entered is incorrect or expired."
+                )
+
 
         can_upload = bool(staff.can_upload_reels)
         can_manage = bool(getattr(staff, "can_manage_content", False))

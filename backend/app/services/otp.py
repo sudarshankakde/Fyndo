@@ -31,7 +31,9 @@ class OtpService:
         if attempts == 1:
             await redis.expire(rate_key, OTP_SEND_WINDOW_SECONDS)
         if attempts > OTP_SEND_LIMIT:
-            return False, None, "Too many OTP requests. Please wait 10 minutes."
+            if settings.ENVIRONMENT.lower() == "production":
+                return False, None, "Too many OTP requests. Please wait 10 minutes."
+            logger.info(f"[DEV] Exceeded rate limit for {phone}, bypassing in development mode")
 
         # Cryptographically secure 6-digit code (was `random.randint`).
         otp_code = f"{secrets.randbelow(1_000_000):06d}"

@@ -76,6 +76,8 @@ class StaffLoginRequest(BaseModel):
     store_phone: Optional[str] = Field(None, description="Store owner or staff registered phone number")
     phone: Optional[str] = Field(None, description="Alias for store_phone")
     pin: str = Field(..., min_length=6, max_length=6, description="6-digit staff PIN")
+    otp: Optional[str] = Field(None, description="Optional 6-digit OTP for 2FA")
+
 
 
 class StaffLoginResponse(BaseModel):

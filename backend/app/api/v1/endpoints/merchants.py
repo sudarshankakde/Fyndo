@@ -266,8 +266,8 @@ async def get_store_categories():
                 name=cat["name"],
                 icon=cat.get("icon"),
                 sub_categories=cat.get("sub_categories", []),
-                cover_url=CloudinaryService.resolve_to_cloudinary_url(cov, folder="covers") or cov,
-                logo_url=CloudinaryService.resolve_to_cloudinary_url(log, folder="logos") or log,
+                cover_url=cov,
+                logo_url=log,
             )
         )
     return ResponseEnvelope(data=data)

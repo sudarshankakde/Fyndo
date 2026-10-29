@@ -272,6 +272,7 @@ async def verify_backup_pin(
 
 
 @router.get("/merchants/redemptions", response_model=ResponseEnvelope[list[MerchantRedemptionItem]])
+@router.get("/redemptions/history", response_model=ResponseEnvelope[list[MerchantRedemptionItem]])
 async def merchant_redemption_history(
     from_date: Optional[datetime] = None,
     to_date: Optional[datetime] = None,

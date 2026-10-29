@@ -148,6 +148,8 @@ class CloudinaryService:
 
         return None
 
+    _url_cache: dict = {}
+
     @staticmethod
     def resolve_to_cloudinary_url(url: Optional[str], folder: str = "logos") -> Optional[str]:
         """
@@ -159,6 +161,8 @@ class CloudinaryService:
             return url
         if "res.cloudinary.com" in url or (url.startswith("https://") and "localhost" not in url and "127.0.0.1" not in url and "10.0.2.2" not in url):
             return url
+        if url in CloudinaryService._url_cache:
+            return CloudinaryService._url_cache[url]
         if not _ensure_cloudinary_configured():
             return url
 
@@ -171,13 +175,17 @@ class CloudinaryService:
         local_file_path = os.path.join(backend_root, rel_path)
 
         if not os.path.exists(local_file_path):
+            CloudinaryService._url_cache[url] = url
             return url
 
         try:
             cloud_res = CloudinaryService.upload_file(local_file_path, folder=folder, resource_type="image")
             if cloud_res and cloud_res.get("url"):
+                CloudinaryService._url_cache[url] = cloud_res["url"]
                 return cloud_res["url"]
         except Exception:
             pass
 
+        CloudinaryService._url_cache[url] = url
         return url
+
