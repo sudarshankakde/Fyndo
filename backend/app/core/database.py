@@ -29,18 +29,10 @@ if not _is_sqlite:
         "pool_recycle": settings.DB_POOL_RECYCLE_SECONDS,
     })
 
-import time as _time
-import os as _os
-_local_tz = _time.tzname[0] if _time.tzname else "UTC"
-_os.environ.setdefault("TZ", _local_tz)
-try:
-    _time.tzset()
-except AttributeError:
-    pass
-
 if not _is_sqlite:
     _engine_kwargs.setdefault("connect_args", {})
-    _engine_kwargs["connect_args"].update({"server_settings": {"timezone": _local_tz}})
+    # Use UTC for PostgreSQL session timezone to prevent invalid OS timezone names (e.g. Windows 'India Standard Time')
+    _engine_kwargs["connect_args"].update({"server_settings": {"timezone": "UTC"}})
 
 engine = create_async_engine(settings.DATABASE_URL, **_engine_kwargs)
 
