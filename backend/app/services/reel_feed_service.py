@@ -258,6 +258,11 @@ async def _query_feed(
         merchant_sector = getattr(merchant.sector, "value", str(merchant.sector))
         v_url = CloudinaryService.get_optimized_video_url(reel.video_url) or reel.video_url
         hls_url = getattr(reel, "video_hls_url", None)
+        if not hls_url and (getattr(reel, "cloudinary_public_id", None) or reel.video_url):
+            hls_url = CloudinaryService.get_hls_url(
+                public_id=getattr(reel, "cloudinary_public_id", None),
+                video_url=reel.video_url,
+            )
         items.append(
             ReelOut(
                 id=reel.id,

@@ -263,3 +263,26 @@ async def test_moderation_queue_and_actions(client: AsyncClient):
         approved = await session.get(Reel, uuid.UUID(reel_id))
         assert approved.status == ReelStatus.APPROVED
         assert approved.rejection_reason is None
+
+
+async def test_admin_system_health_and_cache_flush(client: AsyncClient):
+    await _sign_in(client)
+
+    # 1. Access dashboard - verify system health section rendered
+    dash_resp = await client.get("/admin/")
+    assert dash_resp.status_code == 200
+    assert "Infrastructure Health" in dash_resp.text
+    assert "Uptime:" in dash_resp.text
+
+    # 2. Access dedicated system health view
+    sys_resp = await client.get("/admin/system")
+    assert sys_resp.status_code == 200
+    assert "System Health" in sys_resp.text
+    assert "Redis Cache" in sys_resp.text
+    assert "Database & Connection Pool" in sys_resp.text
+
+    # 3. Post cache flush action
+    flush_resp = await client.post("/admin/system/cache/flush")
+    assert flush_resp.status_code == 303
+    assert "/admin/system" in flush_resp.headers["location"]
+

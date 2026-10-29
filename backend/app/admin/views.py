@@ -10,10 +10,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.admin.deps import current_admin
-from app.admin.helpers import form_fields, get_row, meta_or_404, panel_context
+from app.admin.helpers import form_fields, get_row, meta_or_404, panel_context, redirect_to
 from app.admin.registry import ALL_MODELS
 from app.admin.templating import templates
 from app.admin.utils import count_rows, query_page, serialize_detail, serialize_row
+from app.api.v1.endpoints.admin_system import (
+    get_db_stats,
+    get_redis_stats,
+    get_system_resources,
+)
 from app.core.audit import audit_log
 from app.core.database import get_db
 from app.models import (
@@ -98,6 +103,10 @@ async def dashboard(
     for meta in ALL_MODELS:
         stats.append({"meta": meta, "count": await count_rows(db, meta)})
     total_records = sum(item["count"] for item in stats)
+    system_resources = get_system_resources()
+    redis_stats = await get_redis_stats()
+    db_stats = await get_db_stats(db)
+
     return templates.TemplateResponse(
         request,
         "dashboard.html",
@@ -108,8 +117,60 @@ async def dashboard(
             highlights=await _highlights(db),
             total_records=total_records,
             auto_approve_reels=await is_auto_approve_enabled(db),
+            system=system_resources,
+            redis=redis_stats,
+            database=db_stats,
         ),
     )
+
+
+@router.get("/system")
+async def system_health(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    admin: Dict[str, Any] = Depends(current_admin),
+):
+    system_res = get_system_resources()
+    redis_stats = await get_redis_stats()
+    db_stats = await get_db_stats(db)
+    audit_stats = await get_audit_stats(db, hours=24)
+    overall_status = "healthy"
+    if db_stats.get("status") != "connected" or redis_stats.get("status") != "connected":
+        overall_status = "degraded"
+
+    return templates.TemplateResponse(
+        request,
+        "system_health.html",
+        panel_context(
+            request,
+            admin,
+            system=system_res,
+            redis=redis_stats,
+            database=db_stats,
+            audit_stats=audit_stats,
+            overall_status=overall_status,
+        ),
+    )
+
+
+@router.post("/system/cache/flush")
+async def flush_cache_action(
+    request: Request,
+    admin: Dict[str, Any] = Depends(current_admin),
+):
+    try:
+        from app.core.redis import get_redis_client
+        redis = await get_redis_client()
+        keys = []
+        async for key in redis.scan_iter(match="*", count=200):
+            keys.append(key)
+        deleted = 0
+        if keys:
+            deleted = await redis.delete(*keys)
+        audit_log("admin.cache_flush", actor_id=admin.get("sub"), actor_role="SUPER_ADMIN", deleted_keys=deleted)
+        return redirect_to(request, f"/admin/system?ok=Flushed+{deleted}+cache+keys+successfully")
+    except Exception as exc:
+        return redirect_to(request, f"/admin/system?err=Cache+flush+failed:+{str(exc)}")
 
 
 @router.post("/settings/auto-approve")

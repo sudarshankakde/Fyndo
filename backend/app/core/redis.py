@@ -24,6 +24,7 @@ async def get_redis_client() -> aioredis.Redis:
         client = aioredis.from_url(
             settings.REDIS_URL,
             decode_responses=True,
+            max_connections=500,
             socket_timeout=2.0,
             socket_connect_timeout=2.0,
         )
@@ -53,5 +54,9 @@ async def get_redis_client() -> aioredis.Redis:
 async def close_redis_client() -> None:
     global _redis_client
     if _redis_client is not None:
-        await _redis_client.close()
+        client = _redis_client
         _redis_client = None
+        try:
+            await client.aclose()
+        except Exception:
+            pass

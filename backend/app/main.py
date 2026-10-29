@@ -44,6 +44,38 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Cache initialization notice: {e}")
 
+    # Ensure platform Super Admin account is seeded
+    try:
+        from app.core.database import async_session_factory
+        from app.core.security import get_password_hash
+        from app.models.user import User, UserRole
+        from sqlalchemy import select
+        async with async_session_factory() as session:
+            admin_stmt = select(User).where(
+                (User.phone == settings.SUPER_ADMIN_IDENTIFIER) | 
+                (User.email == settings.SUPER_ADMIN_EMAIL)
+            )
+            admin_user = (await session.execute(admin_stmt)).scalars().first()
+            if not admin_user:
+                admin_user = User(
+                    phone=settings.SUPER_ADMIN_IDENTIFIER,
+                    email=settings.SUPER_ADMIN_EMAIL,
+                    full_name="Platform Super Admin",
+                    role=UserRole.SUPER_ADMIN,
+                    password_hash=get_password_hash(settings.SUPER_ADMIN_PASSWORD or "AdminFyndo@2026"),
+                    preferred_language="en",
+                    is_active=True,
+                )
+                session.add(admin_user)
+                await session.commit()
+                logger.info("Initialized platform Super Admin credentials.")
+            elif admin_user.password_hash is None and settings.SUPER_ADMIN_PASSWORD:
+                admin_user.password_hash = get_password_hash(settings.SUPER_ADMIN_PASSWORD)
+                admin_user.role = UserRole.SUPER_ADMIN
+                await session.commit()
+    except Exception as e:
+        logger.warning(f"Admin seeding notice: {e}")
+
     sweep_task = None
     if settings.REEL_LIFECYCLE_SWEEP_SECONDS > 0:
         sweep_task = asyncio.create_task(
@@ -57,6 +89,11 @@ async def lifespan(app: FastAPI):
         sweep_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await sweep_task
+    try:
+        from app.services.audit_service import stop_audit_flusher
+        await stop_audit_flusher()
+    except Exception:
+        pass
     await close_redis_client()
     await engine.dispose()
 

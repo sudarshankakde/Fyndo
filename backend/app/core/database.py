@@ -17,7 +17,7 @@ class Base(DeclarativeBase):
 # Initialize async SQLAlchemy engine
 _is_sqlite = "sqlite" in settings.DATABASE_URL
 _engine_kwargs = {
-    "echo": (settings.ENVIRONMENT == "development" and not settings.is_production),
+    "echo": bool(getattr(settings, "DB_ECHO", False)),
     "future": True,
     "pool_pre_ping": True,
 }

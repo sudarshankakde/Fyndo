@@ -1,8 +1,11 @@
 import logging
+import os
 import secrets
 from typing import Annotated, List, Optional
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+
+_ENV_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.env"))
 
 logger = logging.getLogger("fyndo.config")
 
@@ -31,9 +34,10 @@ class Settings(BaseSettings):
 
     # PostgreSQL Database URL (Asyncpg)
     DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/fyndo_db"
-    DB_POOL_SIZE: int = 20
-    DB_MAX_OVERFLOW: int = 30
-    DB_POOL_TIMEOUT: int = 20
+    DB_ECHO: bool = False
+    DB_POOL_SIZE: int = 50
+    DB_MAX_OVERFLOW: int = 50
+    DB_POOL_TIMEOUT: int = 15
     DB_POOL_RECYCLE_SECONDS: int = 1800
 
     # Redis Connection
@@ -108,7 +112,7 @@ class Settings(BaseSettings):
     NOTIFICATION_PAGE_SIZE: int = 30
 
     model_config = SettingsConfigDict(
-        env_file=(".env", "../.env"),
+        env_file=(_ENV_PATH, ".env", "../.env"),
         env_file_encoding="utf-8",
         extra="ignore",
         case_sensitive=True,

@@ -18,12 +18,28 @@ from tests.feature_helpers import (
 
 @pytest.fixture
 def setup():
-    asyncio.run(prepare_schema())
-    asyncio.run(set_auto_approve(True))
-    store = asyncio.run(seed_store(with_staff=True))
-    shopper = asyncio.run(seed_user(full_name="Sudarshan"))
+    from app.core.database import engine
+
+    engine.sync_engine.pool = engine.sync_engine.pool.recreate()
+
+    async def _init():
+        await prepare_schema()
+        await set_auto_approve(True)
+        store = await seed_store(with_staff=True)
+        shopper = await seed_user(full_name="Sudarshan")
+        return store, shopper
+
+    store, shopper = asyncio.run(_init())
+    engine.sync_engine.pool = engine.sync_engine.pool.recreate()
     yield store, shopper
-    asyncio.run(set_auto_approve(False))
+
+    engine.sync_engine.pool = engine.sync_engine.pool.recreate()
+
+    async def _cleanup():
+        await set_auto_approve(False)
+
+    asyncio.run(_cleanup())
+    engine.sync_engine.pool = engine.sync_engine.pool.recreate()
 
 
 def _coupon_template_id(client: TestClient, store) -> str:
@@ -35,6 +51,8 @@ def _coupon_template_id(client: TestClient, store) -> str:
 
 
 def test_socket_rejects_missing_or_foreign_token(setup):
+    from app.core.database import engine
+    engine.sync_engine.pool = engine.sync_engine.pool.recreate()
     store, (_, shopper_token) = setup
     url = f"/api/v1/ws/merchants/{store.merchant_id}"
     with TestClient(app) as client:
@@ -43,6 +61,7 @@ def test_socket_rejects_missing_or_foreign_token(setup):
                 with client.websocket_connect(url + query) as ws:
                     ws.receive_json()
             assert exc.value.code == 1008
+    engine.sync_engine.pool = engine.sync_engine.pool.recreate()
 
 
 def test_owner_and_cashier_receive_coupon_enrolled_event(setup):

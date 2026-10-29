@@ -4,7 +4,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Optional
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -273,7 +273,21 @@ class AuthService:
             and request.password == settings.SUPER_ADMIN_PASSWORD
         )
 
-        stmt = select(User).where((User.phone == identifier) | (User.email == identifier))
+        clean_id = identifier.lower()
+        admin_email = (settings.SUPER_ADMIN_EMAIL or "").lower().strip()
+        admin_phone = settings.SUPER_ADMIN_IDENTIFIER.strip()
+
+        if clean_id in (admin_email, admin_phone.lower()):
+            stmt = select(User).where(
+                (User.phone == admin_phone)
+                | (func.lower(User.email) == admin_email)
+                | (User.phone == identifier)
+                | (func.lower(User.email) == clean_id)
+            )
+        else:
+            stmt = select(User).where(
+                (User.phone == identifier) | (func.lower(User.email) == clean_id)
+            )
         res = await db.execute(stmt)
         user = res.scalars().first()
 
@@ -292,21 +306,37 @@ class AuthService:
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="Invalid administrator credentials."
                 )
+            if is_master:
+                if not user.email and settings.SUPER_ADMIN_EMAIL:
+                    user.email = settings.SUPER_ADMIN_EMAIL
+                if not user.password_hash and settings.SUPER_ADMIN_PASSWORD:
+                    user.password_hash = get_password_hash(settings.SUPER_ADMIN_PASSWORD)
+                user.role = UserRole.SUPER_ADMIN
+                await db.flush()
         else:
             if not is_master:
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="Invalid administrator credentials."
                 )
-            user = User(
-                phone=settings.SUPER_ADMIN_IDENTIFIER,
-                email=settings.SUPER_ADMIN_EMAIL,
-                full_name="Regional Desk Admin",
-                role=UserRole.SUPER_ADMIN,
-                password_hash=get_password_hash(settings.SUPER_ADMIN_PASSWORD),
-                preferred_language="en"
-            )
-            db.add(user)
+            existing_phone = (
+                await db.execute(select(User).where(User.phone == admin_phone))
+            ).scalars().first()
+            if existing_phone:
+                user = existing_phone
+                user.email = settings.SUPER_ADMIN_EMAIL
+                user.role = UserRole.SUPER_ADMIN
+                user.password_hash = get_password_hash(settings.SUPER_ADMIN_PASSWORD)
+            else:
+                user = User(
+                    phone=settings.SUPER_ADMIN_IDENTIFIER,
+                    email=settings.SUPER_ADMIN_EMAIL,
+                    full_name="Regional Desk Admin",
+                    role=UserRole.SUPER_ADMIN,
+                    password_hash=get_password_hash(settings.SUPER_ADMIN_PASSWORD),
+                    preferred_language="en"
+                )
+                db.add(user)
             await db.flush()
             await db.refresh(user)
 

@@ -1,9 +1,42 @@
 {% extends "base.html" %}
 {% block title %}Dashboard · {{ panel_name }}{% endblock %}
 {% block heading %}Dashboard{% endblock %}
-{% block crumbs %}Live database overview{% endblock %}
+{% block crumbs %}Live database overview & system telemetry{% endblock %}
 
 {% block content %}
+<!-- Live System Health Strip -->
+<div class="card" style="margin-bottom: 20px; border-left: 4px solid {% if database.status == 'connected' and redis.status == 'connected' %}#10b981{% else %}#f59e0b{% endif %};">
+  <div class="card-head" style="padding-bottom: 8px;">
+    <div style="display: flex; align-items: center; gap: 8px;">
+      <span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: {% if database.status == 'connected' and redis.status == 'connected' %}#10b981{% else %}#f59e0b{% endif %};"></span>
+      <h2 style="font-size: 1rem; margin: 0;">Infrastructure Health</h2>
+      <span class="badge {% if database.status == 'connected' and redis.status == 'connected' %}badge-good{% else %}badge-warn{% endif %}">
+        {% if database.status == 'connected' and redis.status == 'connected' %}ALL SYSTEMS OPERATIONAL{% else %}DEGRADED SUB-SYSTEMS{% endif %}
+      </span>
+    </div>
+    <a class="muted" href="/admin/system" style="font-size: 0.85rem; font-weight: 600; color: #0284c7;">Detailed Telemetry &rarr;</a>
+  </div>
+  <div class="card-body" style="padding-top: 4px;">
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; font-size: 0.85rem;">
+      <div>
+        <span class="muted">Uptime:</span> <strong>{{ system.uptime_human }}</strong>
+      </div>
+      <div>
+        <span class="muted">Host CPU:</span> <strong>{{ system.cpu_percent }}%</strong> ({{ system.cpu_count }} cores)
+      </div>
+      <div>
+        <span class="muted">Memory:</span> <strong>{{ system.memory.used_mb }} MB</strong> ({{ system.memory.percent }}%)
+      </div>
+      <div>
+        <span class="muted">Redis Cache:</span> <strong style="color: {% if redis.status == 'connected' %}#10b981{% else %}#f59e0b{% endif %};">{{ redis.status|upper }}</strong> ({{ redis.mode }})
+      </div>
+      <div>
+        <span class="muted">Database:</span> <strong style="color: #10b981;">{{ database.status|upper }}</strong> ({{ database.dialect|upper }})
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="stat-grid">
   {% for item in highlights %}
   <a class="stat {{ item.tone }}" href="{{ item.href }}">
@@ -30,7 +63,7 @@
 
 <div class="card">
   <div class="card-head">
-    <h2>Tables</h2>
+    <h2>Database Tables</h2>
     <span class="muted">{{ total_records }} records across {{ stats|length }} tables</span>
   </div>
   <div class="card-body">

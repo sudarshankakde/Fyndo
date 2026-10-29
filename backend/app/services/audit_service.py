@@ -1,4 +1,5 @@
-"""Service for recording, querying, and aggregating production-level HTTP & DB audit logs."""
+import asyncio
+import contextlib
 import json
 import logging
 import uuid
@@ -14,6 +15,71 @@ from app.models.request_audit_log import RequestAuditLog
 from app.models.user import User
 
 logger = logging.getLogger("fyndo.audit_service")
+
+
+_audit_queue: asyncio.Queue = asyncio.Queue(maxsize=15000)
+_flusher_task: Optional[asyncio.Task] = None
+
+
+async def _audit_flusher_loop() -> None:
+    """Continuously drains the in-memory audit queue and bulk-persists in batches."""
+    while True:
+        try:
+            batch: List[RequestAuditLog] = []
+            item = await _audit_queue.get()
+            batch.append(item)
+
+            # Consume additional pending items up to 100 per transaction
+            while len(batch) < 100 and not _audit_queue.empty():
+                try:
+                    batch.append(_audit_queue.get_nowait())
+                except asyncio.QueueEmpty:
+                    break
+
+            if batch:
+                async with async_session_factory() as session:
+                    session.add_all(batch)
+                    await session.commit()
+
+            for _ in batch:
+                _audit_queue.task_done()
+        except asyncio.CancelledError:
+            # Drain remaining before exit
+            while not _audit_queue.empty():
+                try:
+                    remaining: List[RequestAuditLog] = []
+                    while len(remaining) < 100 and not _audit_queue.empty():
+                        remaining.append(_audit_queue.get_nowait())
+                    if remaining:
+                        async with async_session_factory() as session:
+                            session.add_all(remaining)
+                            await session.commit()
+                except Exception:
+                    break
+            break
+        except Exception as exc:
+            logger.warning("Failed to persist batched request audit logs: %s", exc)
+            await asyncio.sleep(0.05)
+
+
+def _ensure_flusher_task() -> None:
+    global _flusher_task
+    if _flusher_task is None or _flusher_task.done():
+        try:
+            loop = asyncio.get_running_loop()
+            _flusher_task = loop.create_task(_audit_flusher_loop())
+        except RuntimeError:
+            pass
+
+
+async def stop_audit_flusher() -> None:
+    """Cancels flusher task and drains remaining queue items on server shutdown."""
+    global _flusher_task
+    if _flusher_task and not _flusher_task.done():
+        _flusher_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await _flusher_task
+        _flusher_task = None
 
 
 async def persist_request_audit_log(
@@ -33,35 +99,34 @@ async def persist_request_audit_log(
     error_message: Optional[str],
     db_summary: Dict[str, Any],
 ) -> None:
-    """Asynchronously records a request and its DB impact to the database."""
+    """Pushes request metadata and DB impact to the non-blocking batched flusher queue."""
+    log_entry = RequestAuditLog(
+        id=uuid.uuid4(),
+        request_id=request_id,
+        timestamp=datetime.now(timezone.utc),
+        method=method.upper(),
+        path=path,
+        query_params=query_params if query_params else None,
+        status_code=status_code,
+        duration_ms=duration_ms,
+        client_ip=client_ip,
+        user_agent=user_agent[:500] if user_agent else None,
+        user_id=user_id,
+        user_role=user_role,
+        request_body=request_body,
+        response_size=response_size,
+        error_message=error_message,
+        db_query_count=db_summary.get("query_count", 0),
+        db_time_ms=db_summary.get("db_time_ms", 0.0),
+        db_operations=db_summary.get("operations"),
+        tables_affected=db_summary.get("tables_affected"),
+        db_queries=db_summary.get("queries"),
+    )
+    _ensure_flusher_task()
     try:
-        async with async_session_factory() as session:
-            log_entry = RequestAuditLog(
-                id=uuid.uuid4(),
-                request_id=request_id,
-                timestamp=datetime.now(timezone.utc),
-                method=method.upper(),
-                path=path,
-                query_params=query_params if query_params else None,
-                status_code=status_code,
-                duration_ms=duration_ms,
-                client_ip=client_ip,
-                user_agent=user_agent[:500] if user_agent else None,
-                user_id=user_id,
-                user_role=user_role,
-                request_body=request_body,
-                response_size=response_size,
-                error_message=error_message,
-                db_query_count=db_summary.get("query_count", 0),
-                db_time_ms=db_summary.get("db_time_ms", 0.0),
-                db_operations=db_summary.get("operations"),
-                tables_affected=db_summary.get("tables_affected"),
-                db_queries=db_summary.get("queries"),
-            )
-            session.add(log_entry)
-            await session.commit()
-    except Exception as exc:
-        logger.warning("Failed to persist request audit log in background: %s", exc)
+        _audit_queue.put_nowait(log_entry)
+    except asyncio.QueueFull:
+        logger.warning("Audit queue full; dropped log entry for %s", request_id)
 
 
 async def get_audit_stats(db: AsyncSession, hours: int = 24) -> Dict[str, Any]:

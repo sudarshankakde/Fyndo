@@ -14,6 +14,7 @@ from app.api.v1.endpoints import (
     admin,
     admin_settings,
     admin_audit_logs,
+    admin_system,
     ws,
 )
 
@@ -33,4 +34,5 @@ api_router.include_router(media.router, tags=["Media Uploads"])
 api_router.include_router(admin.router, tags=["Admin Moderation"])
 api_router.include_router(admin_settings.router, tags=["Admin Moderation"])
 api_router.include_router(admin_audit_logs.router, tags=["Admin Audit Logs"])
+api_router.include_router(admin_system.router, tags=["Admin System Health & Telemetry"])
 api_router.include_router(ws.router, tags=["Real-time"])
