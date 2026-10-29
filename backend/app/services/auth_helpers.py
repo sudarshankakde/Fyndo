@@ -15,6 +15,7 @@ async def build_user_out(user: User, db: AsyncSession) -> UserOut:
     business_name: Optional[str] = None
     kyc_status: Optional[str] = None
 
+    merchant = None
     if user.role == UserRole.MERCHANT:
         stmt = select(Merchant).where(Merchant.user_id == user.id)
         res = await db.execute(stmt)
@@ -40,9 +41,15 @@ async def build_user_out(user: User, db: AsyncSession) -> UserOut:
             shopping_prefs = []
 
     # Completeness check:
-    # Merchants and Cashiers never undergo Shopper onboarding
     is_shopper = (user.role == UserRole.SHOPPER)
-    if not is_shopper:
+    if user.role == UserRole.MERCHANT:
+        has_store = bool(
+            merchant is not None
+            and merchant.business_name
+            and len(merchant.business_name.strip()) >= 2
+        )
+        onboarding_completed = has_store or bool(getattr(user, "onboarding_completed", False))
+    elif user.role == UserRole.SUPER_ADMIN:
         onboarding_completed = True
     else:
         has_name = bool(user.full_name and len(user.full_name.strip()) >= 2)

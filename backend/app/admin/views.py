@@ -30,7 +30,7 @@ from app.models import (
     ReelStatus,
     UserCoupon,
 )
-from app.models.system_settings import AUTO_APPROVE_REELS
+from app.models.system_settings import AUTO_APPROVE_KYC, AUTO_APPROVE_REELS
 from app.services.audit_service import (
     enrich_logs_with_user_details,
     get_audit_stats,
@@ -38,7 +38,7 @@ from app.services.audit_service import (
 )
 from app.services.moderation_alerts import notify_reel_decision
 from app.services.reel_lifecycle_service import start_offer_clock
-from app.services.settings_service import is_auto_approve_enabled, set_setting
+from app.services.settings_service import is_auto_approve_enabled, is_auto_approve_kyc_enabled, set_setting
 
 logger = logging.getLogger("fyndo.admin")
 router = APIRouter()
@@ -117,6 +117,7 @@ async def dashboard(
             highlights=await _highlights(db),
             total_records=total_records,
             auto_approve_reels=await is_auto_approve_enabled(db),
+            auto_approve_kyc=await is_auto_approve_kyc_enabled(db),
             system=system_resources,
             redis=redis_stats,
             database=db_stats,
@@ -190,6 +191,29 @@ async def toggle_auto_approve(
         actor_role="SUPER_ADMIN",
         target_type="system_settings",
         target_id=AUTO_APPROVE_REELS,
+        value=enabled,
+        source="admin_panel",
+    )
+    return RedirectResponse("/admin/", status_code=303)
+
+
+@router.post("/settings/auto-approve-kyc")
+async def toggle_auto_approve_kyc(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    admin: Dict[str, Any] = Depends(current_admin),
+):
+    """Dashboard switch: auto-approve merchant KYC store applications upon submission."""
+    form = await request.form()
+    enabled = form.get("enabled") == "on"
+    await set_setting(db, AUTO_APPROVE_KYC, enabled)
+    await db.commit()
+    audit_log(
+        "system_settings.update",
+        actor_id=admin.get("sub"),
+        actor_role="SUPER_ADMIN",
+        target_type="system_settings",
+        target_id=AUTO_APPROVE_KYC,
         value=enabled,
         source="admin_panel",
     )

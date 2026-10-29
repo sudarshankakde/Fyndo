@@ -110,3 +110,13 @@ async def set_auto_approve(enabled: bool) -> None:
     async with async_session_factory() as session:
         await set_setting(session, AUTO_APPROVE_REELS, enabled)
         await session.commit()
+
+
+async def set_auto_approve_kyc(enabled: bool) -> None:
+    from app.core.database import async_session_factory
+    from app.models.system_settings import AUTO_APPROVE_KYC
+    from app.services.settings_service import set_setting
+
+    async with async_session_factory() as session:
+        await set_setting(session, AUTO_APPROVE_KYC, enabled)
+        await session.commit()

@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.utils.geo import calculate_haversine_distance
 from app.api.v1.endpoints.auth import get_current_user, get_optional_user
 from app.api.v1.endpoints.merchant_context import MerchantContext, get_merchant_context
+from app.core.audit import audit_log
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.security import get_password_hash
@@ -15,6 +16,8 @@ from app.models.user import User, UserRole
 from app.schemas.common import ResponseEnvelope
 from app.services import merchant_engagement_service as engagement
 from app.services.cloudinary_service import CloudinaryService
+from app.services.moderation_alerts import notify_merchant_decision
+from app.services.settings_service import is_auto_approve_kyc_enabled
 from app.services.category_assets import (
     STORE_CATEGORIES_METADATA,
     normalize_sector,
@@ -168,7 +171,8 @@ async def onboard_merchant(
         # User already registered a merchant; ensure user role is updated and return existing merchant idempotently
         if current_user.role != UserRole.MERCHANT:
             current_user.role = UserRole.MERCHANT
-            await db.flush()
+        current_user.onboarding_completed = True
+        await db.flush()
         # Clean up any lingering draft
         await db.execute(delete(MerchantOnboardingDraft).where(MerchantOnboardingDraft.user_id == current_user.id))
         await db.flush()
@@ -193,6 +197,9 @@ async def onboard_merchant(
     if cover_url and (cover_url.startswith("/uploads/") or "localhost" in cover_url or "10.0.2.2" in cover_url):
         cover_url = CloudinaryService.resolve_to_cloudinary_url(cover_url, folder="covers") or cover_url
 
+    auto_approve_kyc = await is_auto_approve_kyc_enabled(db)
+    initial_kyc_status = KycStatus.APPROVED if auto_approve_kyc else KycStatus.PENDING
+
     merchant = Merchant(
         user_id=current_user.id,
         business_name=request.business_name,
@@ -203,15 +210,16 @@ async def onboard_merchant(
         longitude=request.longitude,
         gstin=request.gstin,
         kyc_doc_url=request.kyc_doc_url,
-        kyc_status=KycStatus.PENDING,
+        kyc_status=initial_kyc_status,
         cover_url=cover_url,
         logo_url=logo_url,
         description=request.description,
     )
     db.add(merchant)
 
-    # Upgrade user role to MERCHANT only upon successful creation
+    # Upgrade user role to MERCHANT and complete onboarding upon successful creation
     current_user.role = UserRole.MERCHANT
+    current_user.onboarding_completed = True
 
     # Clean up any saved onboarding draft atomically
     await db.execute(delete(MerchantOnboardingDraft).where(MerchantOnboardingDraft.user_id == current_user.id))
@@ -219,9 +227,26 @@ async def onboard_merchant(
     await db.flush()
     await db.refresh(merchant)
 
+    if auto_approve_kyc:
+        await notify_merchant_decision(db, merchant=merchant, decision="APPROVE", rejection_reason=None)
+        audit_log(
+            "merchant.kyc_auto_approved",
+            actor_id=current_user.id,
+            actor_role="MERCHANT",
+            target_type="merchant",
+            target_id=merchant.id,
+            business_name=merchant.business_name,
+        )
+
+    message = (
+        "Merchant onboarding completed and verified."
+        if auto_approve_kyc
+        else "Merchant onboarding submitted. Pending admin review."
+    )
+
     return ResponseEnvelope(
         data=MerchantOut.model_validate(merchant),
-        message="Merchant onboarding submitted. Pending admin review."
+        message=message
     )
 
 
@@ -347,10 +372,29 @@ async def resubmit_merchant_kyc(
 
     for field, value in request.model_dump(exclude_unset=True).items():
         setattr(merchant, field, value)
-    merchant.kyc_status = KycStatus.PENDING
-    await db.flush()
+
+    auto_approve_kyc = await is_auto_approve_kyc_enabled(db)
+    if auto_approve_kyc:
+        merchant.kyc_status = KycStatus.APPROVED
+        merchant.kyc_rejection_reason = None
+        await db.flush()
+        await notify_merchant_decision(db, merchant=merchant, decision="APPROVE", rejection_reason=None)
+        audit_log(
+            "merchant.kyc_auto_approved",
+            actor_id=current_user.id,
+            actor_role="MERCHANT",
+            target_type="merchant",
+            target_id=merchant.id,
+            business_name=merchant.business_name,
+        )
+        message = "KYC verified."
+    else:
+        merchant.kyc_status = KycStatus.PENDING
+        await db.flush()
+        message = "KYC resubmitted for review."
+
     await db.refresh(merchant)
-    return ResponseEnvelope(data=MerchantOut.model_validate(merchant), message="KYC resubmitted for review.")
+    return ResponseEnvelope(data=MerchantOut.model_validate(merchant), message=message)
 
 
 @router.post("/merchants/staff", response_model=ResponseEnvelope[StaffOut])

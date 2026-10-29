@@ -126,11 +126,23 @@ class AuthService:
         res = await db.execute(stmt)
         user = res.scalars().first()
 
+        norm_role = role.strip().lower() if role else None
+        target_role = UserRole.MERCHANT if norm_role == "merchant" else UserRole.SHOPPER
+
         if not user:
-            user = User(phone=phone, role=UserRole.SHOPPER, preferred_language=preferred_language)
+            user = User(
+                phone=phone,
+                role=target_role,
+                preferred_language=preferred_language or "en",
+                onboarding_completed=False,
+            )
             db.add(user)
             await db.flush()
             await db.refresh(user)
+        else:
+            if norm_role == "merchant" and user.role != UserRole.MERCHANT:
+                user.role = UserRole.MERCHANT
+                await db.flush()
 
         if not user.is_active:
             raise HTTPException(

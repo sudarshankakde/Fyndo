@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.system_settings import AUTO_APPROVE_REELS, SETTING_DEFAULTS, SystemSetting
+from app.models.system_settings import AUTO_APPROVE_KYC, AUTO_APPROVE_REELS, SETTING_DEFAULTS, SystemSetting
 
 
 async def get_setting(db: AsyncSession, key: str) -> Any:
@@ -24,7 +24,10 @@ async def set_setting(
     if row is None:
         row = SystemSetting(key=key, description=SETTING_DEFAULTS[key]["description"])
         db.add(row)
-    row.value = value
+    if key in (AUTO_APPROVE_REELS, AUTO_APPROVE_KYC) and isinstance(value, str):
+        row.value = value.strip().lower() in ("true", "1", "yes", "on", "t")
+    else:
+        row.value = value
     row.updated_by_user_id = updated_by
     await db.flush()
     return row
@@ -48,4 +51,22 @@ async def list_settings(db: AsyncSession) -> List[Dict[str, Any]]:
 
 
 async def is_auto_approve_enabled(db: AsyncSession) -> bool:
-    return bool(await get_setting(db, AUTO_APPROVE_REELS))
+    val = await get_setting(db, AUTO_APPROVE_REELS)
+    if isinstance(val, bool):
+        return val
+    if isinstance(val, (int, float)):
+        return bool(val)
+    if isinstance(val, str):
+        return val.strip().lower() in ("true", "1", "yes", "on", "t")
+    return bool(val)
+
+
+async def is_auto_approve_kyc_enabled(db: AsyncSession) -> bool:
+    val = await get_setting(db, AUTO_APPROVE_KYC)
+    if isinstance(val, bool):
+        return val
+    if isinstance(val, (int, float)):
+        return bool(val)
+    if isinstance(val, str):
+        return val.strip().lower() in ("true", "1", "yes", "on", "t")
+    return bool(val)

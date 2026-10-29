@@ -77,6 +77,17 @@ async def _cache_set(key: str, payload: dict) -> None:
         logger.debug(f"Feed cache write skipped: {exc}")
 
 
+async def invalidate_feed_cache() -> None:
+    """Invalidates cached feed queries in Redis."""
+    try:
+        redis = await get_redis_client()
+        keys = await redis.keys("feed:*")
+        if keys:
+            await redis.delete(*keys)
+    except Exception as exc:
+        logger.debug(f"Feed cache invalidation skipped: {exc}")
+
+
 def _encode_cursor(distance_m: int, reel_id: str) -> str:
     raw = json.dumps({"distance": distance_m, "id": reel_id}).encode("utf-8")
     return base64.urlsafe_b64encode(raw).decode("utf-8")

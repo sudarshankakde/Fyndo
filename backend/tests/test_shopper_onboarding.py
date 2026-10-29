@@ -105,6 +105,7 @@ async def test_merchant_and_cashier_bypass_shopper_onboarding(client: AsyncClien
             phone=phone,
             role=UserRole.MERCHANT,
             preferred_language="en",
+            onboarding_completed=True,
         )
         db.add(merchant_user)
         await db.commit()

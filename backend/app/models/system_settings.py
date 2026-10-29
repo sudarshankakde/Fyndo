@@ -10,12 +10,17 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.core.database import Base
 
 AUTO_APPROVE_REELS = "auto_approve_reels"
+AUTO_APPROVE_KYC = "auto_approve_kyc"
 
 # Defaults applied when a key has never been written.
 SETTING_DEFAULTS: dict[str, dict[str, Any]] = {
     AUTO_APPROVE_REELS: {
         "value": False,
         "description": "Publish new merchant reels instantly without admin review.",
+    },
+    AUTO_APPROVE_KYC: {
+        "value": False,
+        "description": "Automatically verify merchant KYC store applications upon onboarding.",
     },
 }
 

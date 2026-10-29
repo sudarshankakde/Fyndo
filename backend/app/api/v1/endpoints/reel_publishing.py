@@ -34,6 +34,8 @@ from app.services.reel_lifecycle_service import (
     start_offer_clock,
     utcnow,
 )
+from app.services.moderation_alerts import notify_reel_decision
+from app.services.reel_feed_service import invalidate_feed_cache
 from app.services.settings_service import is_auto_approve_enabled
 
 router = APIRouter()
@@ -48,9 +50,7 @@ class ReelUploader:
 
 
 def _is_approved_kyc(merchant: Merchant) -> bool:
-    if settings.ENVIRONMENT == "development":
-        return True
-    return str(getattr(merchant.kyc_status, "value", merchant.kyc_status)) == "APPROVED"
+    return str(getattr(merchant.kyc_status, "value", merchant.kyc_status)).upper() == "APPROVED"
 
 
 async def _merchant_for(db: AsyncSession, user: User) -> Optional[Merchant]:
@@ -181,6 +181,10 @@ async def create_reel(
     db.add(coupon)
     if auto_approve:
         start_offer_clock(reel, coupon)
+        await db.flush()
+        owner_id = merchant.user_id if merchant else None
+        await notify_reel_decision(db, reel=reel, owner_id=owner_id, decision="APPROVE")
+        await invalidate_feed_cache()
     await db.flush()
 
     audit_log(

@@ -120,3 +120,4 @@ class SystemSettingOut(BaseModel):
 
 class SystemSettingsUpdateRequest(BaseModel):
     auto_approve_reels: Optional[bool] = None
+    auto_approve_kyc: Optional[bool] = None

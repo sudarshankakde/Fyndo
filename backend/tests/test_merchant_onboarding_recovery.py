@@ -19,6 +19,7 @@ from app.core.database import async_session_factory, Base, engine, ensure_compat
 from app.main import app
 from app.models.merchant import Merchant, MerchantOnboardingDraft, KycStatus, Sector
 from app.models.user import User, UserRole
+from tests.feature_helpers import reel_payload, seed_user, set_auto_approve_kyc
 
 
 def unique_phone() -> str:
@@ -51,8 +52,9 @@ async def test_customer_eligible_for_merchant_login_and_initial_draft(client: As
     token = auth_data["access_token"]
     user = auth_data["user"]
 
-    # Role remains SHOPPER until store registration succeeds
-    assert user["role"] == "SHOPPER"
+    # User registering with role="merchant" is saved with MERCHANT role and onboarding pending
+    assert user["role"] == "MERCHANT"
+    assert user["onboarding_completed"] is False
 
     # User initially has no draft
     headers = {"Authorization": f"Bearer {token}"}
@@ -252,6 +254,78 @@ async def test_existing_merchant_rejected_on_customer_login(client: AsyncClient)
     print("SEND RESPONSE:", send.text)
     assert send.status_code == 400
     assert "registered as a Merchant account" in send.text
+
+
+@pytest.mark.asyncio
+async def test_auto_approve_kyc_flow(client: AsyncClient):
+    await set_auto_approve_kyc(True)
+    try:
+        phone = unique_phone()
+        auth_data = await _login(client, phone, role="merchant")
+        headers = {"Authorization": f"Bearer {auth_data['access_token']}"}
+
+        onboard_payload = {
+            "business_name": "Instant Verified Store",
+            "sector": "ELECTRONICS",
+            "address_text": "Tech Zone, Sitabuldi",
+            "city": "Nagpur",
+            "latitude": 21.1458,
+            "longitude": 79.0882,
+            "gstin": "27AABCT1234F1Z1",
+            "kyc_doc_url": "https://res.cloudinary.com/fyndo/image/upload/v1/license.jpg",
+        }
+        res = await client.post("/api/v1/merchants/onboard", headers=headers, json=onboard_payload)
+        assert res.status_code == 200
+        data = res.json()["data"]
+        assert data["kyc_status"] == "APPROVED"
+        assert res.json()["message"] == "Merchant onboarding completed and verified."
+    finally:
+        await set_auto_approve_kyc(False)
+
+
+@pytest.mark.asyncio
+async def test_pending_kyc_blocks_reel_publishing_until_approved(client: AsyncClient):
+    await set_auto_approve_kyc(False)
+    phone = unique_phone()
+    auth_data = await _login(client, phone, role="merchant")
+    merchant_headers = {"Authorization": f"Bearer {auth_data['access_token']}"}
+
+    # 1. Onboard with auto-approve KYC disabled -> KYC is PENDING
+    onboard_payload = {
+        "business_name": "Pending Verification Store",
+        "sector": "FOOD_BEVERAGE",
+        "address_text": "Civil Lines, Nagpur",
+        "city": "Nagpur",
+        "latitude": 21.1500,
+        "longitude": 79.0800,
+        "gstin": "27AABCF5678F1Z2",
+        "kyc_doc_url": "https://res.cloudinary.com/fyndo/image/upload/v1/license.jpg",
+    }
+    onboard_res = await client.post("/api/v1/merchants/onboard", headers=merchant_headers, json=onboard_payload)
+    assert onboard_res.status_code == 200
+    merchant_id = onboard_res.json()["data"]["id"]
+    assert onboard_res.json()["data"]["kyc_status"] == "PENDING"
+
+    # 2. Reel publishing must be BLOCKED while KYC is pending
+    publish_res = await client.post("/api/v1/reels", headers=merchant_headers, json=reel_payload())
+    assert publish_res.status_code == 403
+    assert "KYC must be approved" in publish_res.text
+
+    # 3. Super Admin approves KYC
+    _, admin_token = await seed_user("SUPER_ADMIN", "Admin")
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+    decide_res = await client.post(
+        f"/api/v1/admin/moderation/merchants/{merchant_id}/decision",
+        headers=admin_headers,
+        json={"decision": "APPROVE"},
+    )
+    assert decide_res.status_code == 200
+    assert decide_res.json()["data"]["kyc_status"] == "APPROVED"
+
+    # 4. Reel publishing is now ALLOWED
+    publish_res2 = await client.post("/api/v1/reels", headers=merchant_headers, json=reel_payload())
+    assert publish_res2.status_code == 200
+    assert publish_res2.json()["data"]["reel_id"] is not None
 
 
 
