@@ -105,27 +105,36 @@ async def claim_coupon(
     db: AsyncSession = Depends(get_db)
 ):
     """Claims a coupon template into the shopper's personal in-app wallet."""
-    # Find template
+    # Find template (by ID or fallback by reel_id)
     res = await db.execute(select(CouponTemplate).where(CouponTemplate.id == coupon_template_id))
     template = res.scalars().first()
+    if not template:
+        reel_tmpl_res = await db.execute(select(CouponTemplate).where(CouponTemplate.reel_id == coupon_template_id))
+        template = reel_tmpl_res.scalars().first()
+
     if not template or not template.is_active:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Coupon offer not found or inactive.")
     offer_end = as_aware(template.expires_at)
     if offer_end is not None and offer_end <= datetime.now(timezone.utc):
         raise HTTPException(status_code=status.HTTP_410_GONE, detail="This offer has ended.")
 
-    # Check for active existing claim by this user
+    # Check for active existing claim or prior redemption by this user (one redemption per user)
     existing_res = await db.execute(
         select(UserCoupon).where(
             and_(
-                UserCoupon.coupon_template_id == coupon_template_id,
+                UserCoupon.coupon_template_id == template.id,
                 UserCoupon.user_id == current_user.id,
-                UserCoupon.status == CouponStatus.CLAIMED,
-                UserCoupon.expires_at > datetime.now(timezone.utc)
+                UserCoupon.status.in_([CouponStatus.CLAIMED, CouponStatus.REDEEMED]),
             )
         )
     )
-    if existing_res.scalars().first():
+    existing_claim = existing_res.scalars().first()
+    if existing_claim:
+        if existing_claim.status == CouponStatus.REDEEMED:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="You have already redeemed this offer."
+            )
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="You already have an active claim for this coupon in your wallet."

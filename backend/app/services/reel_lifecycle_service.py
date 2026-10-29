@@ -18,6 +18,7 @@ from sqlalchemy.orm import selectinload
 from app.models.coupon import CouponTemplate
 from app.models.merchant import Sector
 from app.models.notification import NotificationCategory
+from app.core.time_utils import IST, ist_now
 from app.models.reel import Reel, ReelStatus
 from app.services.notification_service import NotificationService
 
@@ -40,14 +41,14 @@ class OfferExtensionError(Exception):
 
 
 def utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return ist_now()
 
 
 def as_aware(value: Optional[datetime]) -> Optional[datetime]:
-    """SQLite hands back naive datetimes; treat them as UTC."""
+    """SQLite hands back naive datetimes; treat them as IST."""
     if value is None or value.tzinfo is not None:
         return value
-    return value.replace(tzinfo=timezone.utc)
+    return value.replace(tzinfo=IST)
 
 
 def max_validity_days(sector) -> int:

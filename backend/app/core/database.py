@@ -84,6 +84,7 @@ _COMPAT_COLUMNS = {
     },
     "reel_comments": {
         "parent_comment_id": ("UUID NULL", "UUID NULL"),
+        "is_pinned": ("BOOLEAN NOT NULL DEFAULT 0", "BOOLEAN NOT NULL DEFAULT FALSE"),
     },
     "users": {
         "username": ("VARCHAR(30) NULL", "VARCHAR(30) NULL"),

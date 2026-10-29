@@ -186,12 +186,11 @@ async def get_reel(
             validity_days=coupon.validity_days,
             expires_at=coupon.expires_at,
             terms=coupon.terms,
+            
         )
 
     v_url = CloudinaryService.get_optimized_video_url(reel.video_url) or reel.video_url
-    hls_url = getattr(reel, "video_hls_url", None) or CloudinaryService.get_hls_url(
-        public_id=getattr(reel, "cloudinary_public_id", None), video_url=reel.video_url
-    )
+    hls_url = getattr(reel, "video_hls_url", None)
     merchant_sector = getattr(merchant_obj.sector, "value", str(merchant_obj.sector))
     like_counts = await _count_map(db, ReelLike, [reel.id])
     comment_counts = await _count_map(db, ReelComment, [reel.id])

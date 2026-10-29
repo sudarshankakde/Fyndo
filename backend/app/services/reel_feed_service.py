@@ -12,6 +12,7 @@ sorted it in Python. This version:
   * caches serialized pages in Redis for a short TTL.
 """
 import base64
+from datetime import datetime, timezone
 import json
 import logging
 import math
@@ -23,7 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.redis import get_redis_client
-from app.models.coupon import CouponTemplate
+from app.models.coupon import CouponTemplate, UserCoupon, CouponStatus
 from app.models.merchant import KycStatus, Merchant
 from app.models.reel import Reel, ReelStatus
 from app.models.reel_engagement import ReelComment, ReelLike, ReelBookmark
@@ -31,7 +32,7 @@ from app.models.user import User
 from app.schemas.reel import CouponFeedSummary, MerchantFeedSummary, ReelOut
 from app.services.category_assets import get_default_logo_url
 from app.services.cloudinary_service import CloudinaryService
-from app.services.reel_lifecycle_service import live_offer_clause
+from app.services.reel_lifecycle_service import as_aware, live_offer_clause
 from app.utils.geo import calculate_haversine_distance
 
 logger = logging.getLogger("fyndo.reel_feed")
@@ -103,6 +104,9 @@ def _coupon_summary(reel: Reel) -> Optional[CouponFeedSummary]:
     template: Optional[CouponTemplate] = reel.coupon_template
     if not template or not template.is_active:
         return None
+    exp = as_aware(template.expires_at)
+    if exp is not None and exp <= datetime.now(timezone.utc):
+        return None
     d_type = getattr(template.discount_type, "value", str(template.discount_type))
     return CouponFeedSummary(
         id=template.id,
@@ -114,6 +118,35 @@ def _coupon_summary(reel: Reel) -> Optional[CouponFeedSummary]:
         expires_at=template.expires_at,
         terms=template.terms,
     )
+
+
+async def _hydrate_user_claims(
+    db: AsyncSession, items: List[ReelOut], current_user: Optional[User]
+) -> List[ReelOut]:
+    """Personalizes `coupon.is_claimed` status for the requesting user."""
+    if not current_user or not items:
+        return items
+    template_ids = [item.coupon.id for item in items if item.coupon]
+    if not template_ids:
+        return items
+    try:
+        claimed_ids = set(
+            (
+                await db.execute(
+                    select(UserCoupon.coupon_template_id).where(
+                        UserCoupon.user_id == current_user.id,
+                        UserCoupon.coupon_template_id.in_(template_ids),
+                        UserCoupon.status.in_([CouponStatus.CLAIMED, CouponStatus.REDEEMED]),
+                    )
+                )
+            ).scalars().all()
+        )
+        for item in items:
+            if item.coupon:
+                item.coupon.is_claimed = item.coupon.id in claimed_ids
+    except Exception as exc:
+        logger.warning(f"Error hydrating user claims: {exc}")
+    return items
 
 
 async def _hydrate_user_likes(
@@ -224,9 +257,7 @@ async def _query_feed(
     for distance_m, _, reel, merchant in page:
         merchant_sector = getattr(merchant.sector, "value", str(merchant.sector))
         v_url = CloudinaryService.get_optimized_video_url(reel.video_url) or reel.video_url
-        hls_url = getattr(reel, "video_hls_url", None) or CloudinaryService.get_hls_url(
-            public_id=getattr(reel, "cloudinary_public_id", None), video_url=reel.video_url
-        )
+        hls_url = getattr(reel, "video_hls_url", None)
         items.append(
             ReelOut(
                 id=reel.id,
@@ -280,6 +311,9 @@ async def build_feed(
     if cached is not None:
         items = [ReelOut.model_validate(entry) for entry in cached.get("items", [])]
         items = await _hydrate_user_likes(db, items, current_user)
+        items = await _hydrate_user_claims(db, items, current_user)
+        if current_user:
+            items.sort(key=lambda item: 1 if (item.coupon and item.coupon.is_claimed) else 0)
         return items, cached.get("next_cursor")
 
     items, next_cursor = await _query_feed(
@@ -290,5 +324,8 @@ async def build_feed(
         {"items": [item.model_dump(mode="json") for item in items], "next_cursor": next_cursor},
     )
     items = await _hydrate_user_likes(db, items, current_user)
+    items = await _hydrate_user_claims(db, items, current_user)
+    if current_user:
+        items.sort(key=lambda item: 1 if (item.coupon and item.coupon.is_claimed) else 0)
     return items, next_cursor
 

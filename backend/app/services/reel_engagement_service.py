@@ -16,8 +16,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.privacy import mask_phone
 from app.core.redis import get_redis_client
+from app.core.time_utils import ist_now, IST
 from app.models.coupon import CouponTemplate
-from app.models.merchant import KycStatus, Merchant
+from app.models.merchant import KycStatus, Merchant, MerchantStaff
 from app.models.notification import NotificationCategory
 from app.models.reel import Reel, ReelStatus, ReelView
 from app.models.reel_engagement import ReelComment, ReelLike, ReelBookmark
@@ -71,6 +72,7 @@ def _comment_out(
         text=comment.text,
         created_at=comment.created_at,
         is_store_reply=_is_store_reply(user),
+        is_pinned=bool(getattr(comment, "is_pinned", False)),
     )
 
 
@@ -99,7 +101,7 @@ async def record_view(
         raise ReelNotFoundError()
 
     user_or_key = str(current_user.id) if current_user else (viewer_key or "anon")
-    today_str = datetime.now(timezone.utc).strftime("%Y%m%d")
+    today_str = ist_now().strftime("%Y%m%d")
     redis_dedup_key = f"view:dedup:{reel_id}:{today_str}:{user_or_key}"
 
     # 1. Fast path: Redis deduplication (sub-millisecond, bypasses DB completely for re-views)
@@ -111,7 +113,7 @@ async def record_view(
     except Exception as exc:
         logger.debug(f"Redis view dedup fallback to DB: {exc}")
         day_start = datetime.combine(
-            datetime.now(timezone.utc).date(), datetime.min.time(), tzinfo=timezone.utc
+            ist_now().date(), datetime.min.time(), tzinfo=IST
         )
         dedup = select(ReelView.id).where(
             ReelView.reel_id == reel_id, ReelView.created_at >= day_start
@@ -220,7 +222,7 @@ async def list_comments(db: AsyncSession, *, reel_id: uuid.UUID) -> List[ReelCom
             .join(User, ReelComment.user_id == User.id)
             .outerjoin(Merchant, Merchant.user_id == User.id)
             .where(ReelComment.reel_id == reel_id)
-            .order_by(ReelComment.created_at.asc())
+            .order_by(ReelComment.is_pinned.desc(), ReelComment.created_at.asc())
             .limit(200)
         )
     ).all()
@@ -262,6 +264,7 @@ async def create_comment(
         user_id=user.id,
         parent_comment_id=stored_parent_comment_id,
         text=text.strip(),
+        created_at=ist_now(),
     )
     db.add(comment)
     await db.flush()
@@ -327,6 +330,64 @@ async def create_comment(
             )
 
     return _comment_out(comment, user, merchant)
+
+
+async def toggle_pin_comment(
+    db: AsyncSession, *, reel_id: uuid.UUID, comment_id: uuid.UUID, user: User
+) -> bool:
+    reel = await _get_live_reel(db, reel_id)
+    if not reel:
+        raise ReelNotFoundError()
+
+    merchant = (
+        await db.execute(select(Merchant).where(Merchant.user_id == user.id))
+    ).scalars().first()
+    is_author = merchant is not None and merchant.id == reel.merchant_id
+
+    if not is_author and user.phone:
+        staff = (
+            await db.execute(
+                select(MerchantStaff).where(
+                    MerchantStaff.phone == user.phone,
+                    MerchantStaff.merchant_id == reel.merchant_id,
+                )
+            )
+        ).scalars().first()
+        if staff:
+            is_author = True
+
+    role_val = user.role.value if hasattr(user.role, "value") else str(user.role)
+    if not is_author and role_val == "ADMIN":
+        is_author = True
+
+    if not is_author:
+        raise PermissionError("Only the author of this post can pin comments.")
+
+    comment = (
+        await db.execute(
+            select(ReelComment).where(
+                ReelComment.id == comment_id, ReelComment.reel_id == reel_id
+            )
+        )
+    ).scalars().first()
+    if not comment:
+        raise CommentNotFoundError()
+
+    if comment.is_pinned:
+        comment.is_pinned = False
+        pinned = False
+    else:
+        # Unpin any currently pinned comment on this reel (maximum 1 pinned comment)
+        await db.execute(
+            update(ReelComment)
+            .where(ReelComment.reel_id == reel_id, ReelComment.is_pinned.is_(True))
+            .values(is_pinned=False)
+        )
+        comment.is_pinned = True
+        pinned = True
+
+    await db.flush()
+    return pinned
 
 
 async def toggle_bookmark(

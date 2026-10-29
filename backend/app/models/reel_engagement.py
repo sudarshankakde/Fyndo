@@ -1,9 +1,10 @@
 import uuid
-from datetime import datetime, timezone
-from sqlalchemy import DateTime, ForeignKey, String, Text, UniqueConstraint
+from datetime import datetime
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from app.core.database import Base
+from app.core.time_utils import ist_now
 
 
 class ReelLike(Base):
@@ -20,7 +21,7 @@ class ReelLike(Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+        DateTime(timezone=True), default=ist_now, nullable=False
     )
 
 
@@ -39,8 +40,9 @@ class ReelComment(Base):
     )
     text: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False, index=True
+        DateTime(timezone=True), default=ist_now, nullable=False, index=True
     )
+    is_pinned: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
 
 class ReelBookmark(Base):
@@ -57,6 +59,6 @@ class ReelBookmark(Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+        DateTime(timezone=True), default=ist_now, nullable=False
     )
 

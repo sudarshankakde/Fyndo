@@ -115,6 +115,34 @@ async def create_reel_comment(
     return ResponseEnvelope(data=comment, message="Comment posted.")
 
 
+@router.post(
+    "/reels/{reel_id}/comments/{comment_id}/pin",
+    response_model=ResponseEnvelope[dict],
+)
+async def toggle_pin_comment(
+    reel_id: uuid.UUID,
+    comment_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    _: None = Depends(rate_limit("reel_comment_pin", 30)),
+):
+    """Pins or unpins a comment on the reel. Only the author of the post can pin comments."""
+    try:
+        pinned = await engagement.toggle_pin_comment(
+            db, reel_id=reel_id, comment_id=comment_id, user=current_user
+        )
+    except engagement.ReelNotFoundError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Reel not found.")
+    except engagement.CommentNotFoundError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Comment not found.")
+    except PermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
+    return ResponseEnvelope(
+        data={"pinned": pinned, "comment_id": str(comment_id)},
+        message="Comment pinned." if pinned else "Comment unpinned.",
+    )
+
+
 @router.get("/reels/saved", response_model=ResponseEnvelope[list[SavedReelOut]])
 async def list_saved_reels(
     db: AsyncSession = Depends(get_db),

@@ -1,7 +1,8 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_serializer, field_validator
+from app.core.time_utils import to_ist
 
 
 class CouponCreateEmbedded(BaseModel):
@@ -69,6 +70,7 @@ class CouponFeedSummary(BaseModel):
     validity_days: int
     expires_at: Optional[datetime] = None
     terms: Optional[str] = None
+    is_claimed: bool = False
 
     model_config = {"from_attributes": True}
 
@@ -132,6 +134,11 @@ class ReelCommentOut(BaseModel):
     text: str
     created_at: datetime
     is_store_reply: bool = False
+    is_pinned: bool = False
+
+    @field_serializer("created_at")
+    def serialize_created_at(self, dt: datetime) -> str:
+        return to_ist(dt).isoformat()
 
     model_config = {"from_attributes": True}
 

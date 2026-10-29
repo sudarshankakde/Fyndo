@@ -51,7 +51,10 @@ async def _owned_merchant(db: AsyncSession, user: User) -> Merchant:
 async def _public_merchant(db: AsyncSession, merchant_id: uuid.UUID) -> Merchant:
     merchant = (
         await db.execute(
-            select(Merchant).where(Merchant.id == merchant_id, Merchant.kyc_status == KycStatus.APPROVED)
+            select(Merchant).where(
+                Merchant.id == merchant_id,
+                Merchant.kyc_status != KycStatus.REJECTED,
+            )
         )
     ).scalars().first()
     if not merchant:
