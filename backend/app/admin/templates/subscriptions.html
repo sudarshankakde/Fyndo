@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+{% block title %}Subscription Management · {{ panel_name }}{% endblock %}
+{% block heading %}Subscription Management{% endblock %}
+{% block crumbs %}Platform-wide merchant subscription lifecycles, renewal controls, and bulk actions{% endblock %}
+
+{% block content %}
+<!-- KPI Summary Cards -->
+<div class="stat-grid" style="margin-bottom: 24px;">
+  <div class="stat tone-good">
+    <div class="stat-num">{{ total_active }}</div>
+    <div class="stat-label">Active Subscriptions</div>
+    <div class="stat-hint">Operating live store profiles</div>
+  </div>
+  <div class="stat tone-warn">
+    <div class="stat-num">{{ total_expiring_soon }}</div>
+    <div class="stat-label">Expiring Soon (&lt; 7 Days)</div>
+    <div class="stat-hint">Requires renewal attention</div>
+  </div>
+  <div class="stat tone-danger">
+    <div class="stat-num">{{ total_expired }}</div>
+    <div class="stat-label">Expired Subscriptions</div>
+    <div class="stat-hint">Grace period or lapsed</div>
+  </div>
+  <div class="stat tone-neutral">
+    <div class="stat-num">{{ total_inactive }}</div>
+    <div class="stat-label">Suspended / Inactive</div>
+    <div class="stat-hint">Manual admin suspension</div>
+  </div>
+</div>
+
+<!-- Bulk Actions & CSV Export Toolbar -->
+<div class="card" style="margin-bottom: 24px; padding: 16px 20px;">
+  <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px;">
+    <!-- Bulk Extend Form -->
+    <form method="post" action="/admin/subscriptions/bulk-extend" style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+      <span style="font-size: 13px; font-weight: 600;">Bulk Extend All Expired:</span>
+      <select name="duration_days" class="input" style="padding: 6px 10px; font-size: 12.5px;">
+        <option value="30">+30 Days (1 Month)</option>
+        <option value="60">+60 Days (2 Months)</option>
+        <option value="90" selected>+90 Days (Quarterly Promo)</option>
+        <option value="180">+180 Days (Half Year)</option>
+        <option value="365">+365 Days (1 Year)</option>
+      </select>
+      <button type="submit" class="btn btn-primary" style="padding: 6px 14px; font-size: 12.5px;"
+              onclick="return confirm('Extend all expired merchants?');">
+        ⚡ Apply Bulk Extension
+      </button>
+    </form>
+
+    <!-- CSV Export Button -->
+    <a href="/admin/subscriptions/export-csv" class="btn btn-ghost" style="border: 1px solid var(--line); font-size: 12.5px; padding: 6px 14px;">
+      📥 Export Subscriptions CSV
+    </a>
+  </div>
+</div>
+
+<!-- Filter Chips -->
+<div style="display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap;">
+  <a class="btn {% if current_filter == 'ALL' %}btn-primary{% else %}btn-ghost{% endif %}"
+     href="/admin/subscriptions?filter=ALL" style="border: 1px solid var(--line); font-size: 12.5px;">
+    All ({{ merchants | length }})
+  </a>
+  <a class="btn {% if current_filter == 'ACTIVE' %}btn-primary{% else %}btn-ghost{% endif %}"
+     href="/admin/subscriptions?filter=ACTIVE" style="border: 1px solid var(--line); font-size: 12.5px;">
+    Active
+  </a>
+  <a class="btn {% if current_filter == 'EXPIRING_SOON' %}btn-primary{% else %}btn-ghost{% endif %}"
+     href="/admin/subscriptions?filter=EXPIRING_SOON" style="border: 1px solid var(--line); font-size: 12.5px;">
+    Expiring Soon (&lt; 7d)
+  </a>
+  <a class="btn {% if current_filter == 'EXPIRED' %}btn-primary{% else %}btn-ghost{% endif %}"
+     href="/admin/subscriptions?filter=EXPIRED" style="border: 1px solid var(--line); font-size: 12.5px;">
+    Expired
+  </a>
+  <a class="btn {% if current_filter == 'INACTIVE' %}btn-primary{% else %}btn-ghost{% endif %}"
+     href="/admin/subscriptions?filter=INACTIVE" style="border: 1px solid var(--line); font-size: 12.5px;">
+    Inactive
+  </a>
+</div>
+
+<!-- Merchant Subscription Table -->
+{% if not merchants %}
+<div class="card" style="text-align: center; padding: 48px 24px;">
+  <div style="font-size: 32px; margin-bottom: 12px;">📊</div>
+  <h2 style="font-size: 18px; margin-bottom: 6px;">No Merchants Matched</h2>
+  <p class="muted" style="margin-bottom: 0;">No merchant subscriptions match filter <strong>{{ current_filter }}</strong>.</p>
+</div>
+{% else %}
+<div class="card">
+  <table class="grid">
+    <thead>
+      <tr>
+        <th>Store & Owner</th>
+        <th>City / Sector</th>
+        <th>Effective Status</th>
+        <th>Start Date</th>
+        <th>Expiration Date</th>
+        <th>Time Remaining</th>
+        <th style="text-align: right;">Quick Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for m in merchants %}
+      {% set eff = m.effective_subscription_status %}
+      <tr>
+        <td class="cell-lead">
+          <a href="/admin/merchants/{{ m.id }}" style="font-weight: 600; color: var(--text);">
+            {{ m.business_name }}
+          </a>
+          <div class="muted" style="font-size: 11px;">
+            {{ m.owner.full_name if m.owner and m.owner.full_name else '—' }} · {{ m.phone or (m.owner.phone if m.owner else '—') }}
+          </div>
+        </td>
+        <td>
+          <div>{{ m.city or '—' }}</div>
+          <div class="muted" style="font-size: 11px;">{{ m.sector.value if m.sector and m.sector.value is defined else (m.sector or '—') }}</div>
+        </td>
+        <td>
+          {% if eff == 'ACTIVE' %}
+            <span class="badge badge-good">Active</span>
+          {% elif eff == 'EXPIRED' %}
+            <span class="badge badge-danger">Expired</span>
+          {% else %}
+            <span class="badge badge-muted">{{ eff }}</span>
+          {% endif %}
+        </td>
+        <td class="muted" style="font-size: 12px;">
+          {{ m.subscription_start_date.strftime('%Y-%m-%d') if m.subscription_start_date else '—' }}
+        </td>
+        <td style="font-size: 12px; font-weight: 500;">
+          {{ m.subscription_expires_at.strftime('%Y-%m-%d %H:%M') if m.subscription_expires_at else 'No expiry set' }}
+        </td>
+        <td style="font-size: 12px;">
+          {% if m.subscription_expires_at %}
+            {% if m.subscription_expires_at > now %}
+              <span style="color: var(--good);">{{ (m.subscription_expires_at - now).days }} days left</span>
+            {% else %}
+              <span style="color: var(--danger);">Expired {{ (now - m.subscription_expires_at).days }}d ago</span>
+            {% endif %}
+          {% else %}
+            <span class="muted">—</span>
+          {% endif %}
+        </td>
+        <td style="text-align: right;">
+          <div style="display: inline-flex; gap: 6px; align-items: center; justify-content: flex-end;">
+            <form method="post" action="/admin/merchants/{{ m.id }}/subscription/extend?duration_days=30" style="display: inline;">
+              <button type="submit" class="btn btn-ghost" style="border: 1px solid var(--line); padding: 4px 8px; font-size: 11.5px;">
+                +30d
+              </button>
+            </form>
+            <form method="post" action="/admin/merchants/{{ m.id }}/subscription/extend?duration_days=90" style="display: inline;">
+              <button type="submit" class="btn btn-ghost" style="border: 1px solid var(--line); padding: 4px 8px; font-size: 11.5px;">
+                +90d
+              </button>
+            </form>
+            <a href="/admin/merchants/{{ m.id }}" class="btn btn-primary" style="padding: 4px 10px; font-size: 11.5px;">
+              Manage →
+            </a>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endblock %}

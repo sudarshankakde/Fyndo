@@ -1,0 +1,218 @@
+{% extends "base.html" %}
+{% block title %}Push Broadcast & Dispatch · {{ panel_name }}{% endblock %}
+{% block heading %}Notification Broadcast & Dispatch{% endblock %}
+{% block crumbs %}Super Admin platform-wide messaging and push alert dispatch center{% endblock %}
+
+{% block content %}
+<!-- Device & Gateway Metrics Strip -->
+<div class="stat-grid" style="margin-bottom: 24px;">
+  <div class="stat tone-neutral">
+    <div class="stat-label">Registered Devices</div>
+    <div class="stat-value">{{ total_devices }}</div>
+    <div class="stat-hint" style="font-size: 11px; margin-top: 4px; color: var(--muted);">
+      🤖 Android: <strong>{{ android_devices }}</strong> · 🍏 iOS: <strong>{{ ios_devices }}</strong>
+    </div>
+  </div>
+
+  <div class="stat {% if push_service_enabled %}tone-good{% else %}tone-warn{% endif %}">
+    <div class="stat-label">Push Gateway Status</div>
+    <div class="stat-value" style="font-size: 20px;">
+      {% if push_service_enabled %}🟢 Online (Expo/FCM){% else %}🟡 Mock / In-Memory{% endif %}
+    </div>
+    <div class="stat-hint" style="font-size: 11px; margin-top: 4px;">
+      {% if push_service_enabled %}Credentials active; external push enabled{% else %}In-app alerts saved; push logged{% endif %}
+    </div>
+  </div>
+
+  <div class="stat tone-good">
+    <div class="stat-label">Merchant Audience</div>
+    <div class="stat-value">{{ merchants_count }}</div>
+    <div class="stat-hint" style="font-size: 11px; margin-top: 4px; color: var(--good);">Active verified business accounts</div>
+  </div>
+
+  <div class="stat tone-good">
+    <div class="stat-label">Shopper Audience</div>
+    <div class="stat-value">{{ shoppers_count }}</div>
+    <div class="stat-hint" style="font-size: 11px; margin-top: 4px; color: var(--good);">Active registered consumer accounts</div>
+  </div>
+</div>
+
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: start; margin-bottom: 24px;">
+  <!-- Broadcast Composer Form -->
+  <div class="card" style="padding: 24px;">
+    <h2 style="font-size: 16px; margin-top: 0; margin-bottom: 16px; display: flex; align-items: center; gap: 8px;">
+      <span>📢</span> Compose New Broadcast
+    </h2>
+    <form method="post" action="/admin/broadcast/send" onsubmit="return confirm('Are you sure you want to broadcast this notification? It will be sent to the selected audience.');">
+      <div style="margin-bottom: 16px;">
+        <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 6px;">Target Audience *</label>
+        <select name="audience" id="audience-select" class="input" style="width: 100%;" onchange="toggleUserTarget(this.value)">
+          <option value="ALL">🌐 All Active Users (Shoppers & Merchants)</option>
+          <option value="MERCHANT">🏪 All Merchants (Store Owners)</option>
+          <option value="SHOPPER">🛍 All Shoppers</option>
+          <option value="USER">👤 Specific User (by Phone or UUID)</option>
+        </select>
+      </div>
+
+      <div id="target-user-container" style="display: none; margin-bottom: 16px;">
+        <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 6px;">Target Phone or UUID *</label>
+        <input type="text" name="target_user" placeholder="e.g. 9021767520 or +919021767520 or UUID" class="input" style="width: 100%;">
+      </div>
+
+      <div style="margin-bottom: 16px;">
+        <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 6px;">Notification Title *</label>
+        <input type="text" name="title" maxlength="140" required placeholder="Short, catchy headline (max 140 chars)" class="input" style="width: 100%;">
+      </div>
+
+      <div style="margin-bottom: 16px;">
+        <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 6px;">Notification Body *</label>
+        <textarea name="body" required rows="3" placeholder="Full message details to display in inbox and push notification..." class="input" style="width: 100%; font-family: inherit; resize: vertical;"></textarea>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px;">
+        <div>
+          <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 6px;">Category</label>
+          <select name="category" class="input" style="width: 100%;">
+            {% for cat in categories %}
+            <option value="{{ cat }}">{{ cat }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 6px;">Action / Deep Link Type</label>
+          <select name="action_type" class="input" style="width: 100%;">
+            <option value="">None (Plain Notice)</option>
+            <option value="url">External URL</option>
+            <option value="screen">In-App Screen</option>
+            <option value="reel">Reel Video</option>
+            <option value="merchant">Merchant Store</option>
+          </select>
+        </div>
+      </div>
+
+      <div style="margin-bottom: 16px;">
+        <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 6px;">Action Reference / URL (optional)</label>
+        <input type="text" name="action_ref" placeholder="e.g. https://... or offer ID or store UUID" class="input" style="width: 100%;">
+      </div>
+
+      <div style="margin-bottom: 16px;">
+        <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 6px;">Image Banner URL (optional)</label>
+        <input type="url" name="image_url" placeholder="https://res.cloudinary.com/... or image link" class="input" style="width: 100%;">
+      </div>
+
+      <div style="margin-bottom: 20px; display: flex; align-items: center; gap: 8px;">
+        <input type="checkbox" name="send_push" id="send_push" value="true" checked style="width: 16px; height: 16px; cursor: pointer;">
+        <label for="send_push" style="font-size: 13px; cursor: pointer; user-select: none;">
+          Deliver as Push Notification to connected devices (FCM / APNs)
+        </label>
+      </div>
+
+      <button type="submit" class="btn btn-primary" style="width: 100%; padding: 10px; font-size: 13px; font-weight: 600; background: #6366f1; border-color: #6366f1;">
+        🚀 Send Broadcast Notification
+      </button>
+    </form>
+  </div>
+
+  <!-- Gateway & Best Practices Info Card -->
+  <div>
+    <div class="card" style="padding: 24px; margin-bottom: 24px;">
+      <h3 style="font-size: 14px; margin-top: 0; margin-bottom: 12px;">🛡️ Push Gateway Architecture</h3>
+      <p style="font-size: 12.5px; line-height: 1.5; color: var(--muted); margin-bottom: 12px;">
+        Notifications are dispatched through the dual-layer messaging engine:
+      </p>
+      <ul style="font-size: 12px; line-height: 1.6; color: var(--muted); padding-left: 20px; margin-bottom: 12px;">
+        <li><strong>In-App Inbox:</strong> Always persisted immediately in the database with audit tracking.</li>
+        <li><strong>Native Push:</strong> Sent to Expo / Firebase Cloud Messaging (FCM) / Apple Push (APNs) device tokens registered by mobile clients.</li>
+        <li><strong>Best Effort Delivery:</strong> Unreachable devices or expired tokens are logged cleanly without interrupting transactions.</li>
+      </ul>
+      <div style="font-size: 11.5px; background: #f8fafc; border: 1px solid var(--line); border-radius: 6px; padding: 10px 14px;">
+        💡 <em>Configuring credentials:</em> Set <code>PUSH_ENABLED=True</code>, <code>PUSH_PROVIDER=expo</code>, and provide <code>EXPO_ACCESS_TOKEN</code> in backend environment variables.
+      </div>
+    </div>
+
+    <!-- Quick Stats -->
+    <div class="card" style="padding: 24px;">
+      <h3 style="font-size: 14px; margin-top: 0; margin-bottom: 12px;">📊 Cumulative Dispatch Summary</h3>
+      <div style="display: flex; flex-direction: column; gap: 10px; font-size: 12.5px;">
+        <div style="display: flex; justify-content: space-between; border-bottom: 1px solid var(--line); padding-bottom: 6px;">
+          <span class="muted">Total Inbox Notices Created:</span>
+          <strong>{{ total_notifications }}</strong>
+        </div>
+        <div style="display: flex; justify-content: space-between; border-bottom: 1px solid var(--line); padding-bottom: 6px;">
+          <span class="muted">Push Notifications Dispatched:</span>
+          <strong style="color: var(--good);">{{ push_sent_count }}</strong>
+        </div>
+        <div style="display: flex; justify-content: space-between;">
+          <span class="muted">Active Device Tokens:</span>
+          <strong>{{ total_devices }}</strong>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Recent Broadcast History Table -->
+<div class="card" style="padding: 20px 24px;">
+  <h2 style="font-size: 15px; margin-top: 0; margin-bottom: 16px;">📜 Recent Platform Notifications</h2>
+  {% if not recent_notifications %}
+  <p class="muted" style="margin: 0; font-size: 13px;">No notifications recorded yet.</p>
+  {% else %}
+  <table class="grid">
+    <thead>
+      <tr>
+        <th>Created (UTC)</th>
+        <th>Category</th>
+        <th>Title</th>
+        <th>Body Preview</th>
+        <th>Push Sent</th>
+        <th>Action</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for notif in recent_notifications %}
+      <tr>
+        <td class="muted" style="font-size: 11.5px; white-space: nowrap;">
+          {{ notif.created_at.strftime('%Y-%m-%d %H:%M') if notif.created_at else '—' }}
+        </td>
+        <td>
+          <span class="badge badge-pill" style="font-size: 11px;">{{ notif.category }}</span>
+        </td>
+        <td>
+          <strong style="font-size: 12.5px;">{{ notif.title }}</strong>
+        </td>
+        <td style="font-size: 12px; color: var(--muted); max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+          {{ notif.body }}
+        </td>
+        <td>
+          {% if notif.push_sent %}
+            <span class="badge badge-good">Delivered</span>
+          {% else %}
+            <span class="badge badge-pill">In-App Only</span>
+          {% endif %}
+        </td>
+        <td style="font-size: 11.5px;">
+          {% if notif.action_type %}
+            <code>{{ notif.action_type }}</code>: {{ notif.action_ref or '—' }}
+          {% else %}
+            <span class="muted">—</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</div>
+
+<script>
+function toggleUserTarget(val) {
+  var el = document.getElementById('target-user-container');
+  if (val === 'USER') {
+    el.style.display = 'block';
+  } else {
+    el.style.display = 'none';
+  }
+}
+</script>
+{% endblock %}
+

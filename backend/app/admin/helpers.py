@@ -7,6 +7,8 @@ from sqlalchemy import select
 
 from app.admin.registry import KIND_BOOLEAN, ModelMeta, get_meta
 from app.admin.utils import coerce_value, fk_options, input_value
+from app.core.audit import audit_log
+from app.models.audit_log import AuditLog
 
 TRUTHY = {"on", "true", "1", "yes"}
 
@@ -120,3 +122,36 @@ def apply_form(meta: ModelMeta, obj: Any, form: Any) -> List[str]:
             continue
         setattr(obj, column.name, value)
     return errors
+
+
+async def record_audit_log(
+    db,
+    *,
+    admin_user: Optional[str] = None,
+    action: str,
+    target_type: Optional[str] = None,
+    target_id: Optional[object] = None,
+    details: Optional[Dict[str, Any]] = None,
+    outcome: str = "success",
+) -> AuditLog:
+    """Inserts a structured row into the audit_logs table and emits to logger."""
+    entry = AuditLog(
+        admin_user=admin_user,
+        action=action,
+        target_type=target_type,
+        target_id=str(target_id) if target_id is not None else None,
+        details=details or {},
+        outcome=outcome,
+    )
+    db.add(entry)
+    await db.flush()
+    audit_log(
+        action,
+        actor_id=admin_user,
+        actor_role="SUPER_ADMIN",
+        target_type=target_type,
+        target_id=target_id,
+        outcome=outcome,
+        **(details or {}),
+    )
+    return entry

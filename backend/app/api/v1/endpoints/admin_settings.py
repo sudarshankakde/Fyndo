@@ -7,7 +7,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.v1.endpoints.admin import get_current_admin
 from app.core.audit import audit_log
 from app.core.database import get_db
-from app.models.system_settings import AUTO_APPROVE_KYC, AUTO_APPROVE_REELS
+from app.models.system_settings import (
+    AUTO_APPROVE_KYC,
+    AUTO_APPROVE_REELS,
+    AUTO_TRIAL_DURATION_DAYS,
+    AUTO_TRIAL_ENABLED,
+)
 from app.models.user import User
 from app.schemas.admin import SystemSettingOut, SystemSettingsUpdateRequest
 from app.schemas.common import ResponseEnvelope
@@ -55,6 +60,30 @@ async def update_system_settings(
             target_type="system_settings",
             target_id=AUTO_APPROVE_KYC,
             value=payload.auto_approve_kyc,
+        )
+    if payload.auto_trial_enabled is not None:
+        await settings_service.set_setting(
+            db, AUTO_TRIAL_ENABLED, payload.auto_trial_enabled, updated_by=admin.id
+        )
+        audit_log(
+            "system_settings.update",
+            actor_id=admin.id,
+            actor_role="SUPER_ADMIN",
+            target_type="system_settings",
+            target_id=AUTO_TRIAL_ENABLED,
+            value=payload.auto_trial_enabled,
+        )
+    if payload.auto_trial_duration_days is not None:
+        await settings_service.set_setting(
+            db, AUTO_TRIAL_DURATION_DAYS, payload.auto_trial_duration_days, updated_by=admin.id
+        )
+        audit_log(
+            "system_settings.update",
+            actor_id=admin.id,
+            actor_role="SUPER_ADMIN",
+            target_type="system_settings",
+            target_id=AUTO_TRIAL_DURATION_DAYS,
+            value=payload.auto_trial_duration_days,
         )
     items = await settings_service.list_settings(db)
     return ResponseEnvelope(data=[SystemSettingOut(**item) for item in items], message="Settings saved.")

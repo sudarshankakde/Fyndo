@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}Platform Analytics · {{ panel_name }}{% endblock %}
+{% block heading %}Platform Performance Analytics{% endblock %}
+{% block crumbs %}Growth trajectories, onboarding metrics, and operational acceptance rates{% endblock %}
+
+{% block content %}
+<!-- Top KPI Cards -->
+<div class="stat-grid" style="margin-bottom: 24px;">
+  <div class="stat tone-good">
+    <div class="stat-num">{{ subscription_rate }}%</div>
+    <div class="stat-label">Active Subscription Rate</div>
+    <div class="stat-hint">{{ active_subscriptions }} of {{ total_merchants }} stores active</div>
+  </div>
+  <div class="stat tone-pill">
+    <div class="stat-num">{{ kyc_rate }}%</div>
+    <div class="stat-label">KYC Approval Rate</div>
+    <div class="stat-hint">{{ approved_kyc }} approved ({{ pending_kyc }} pending)</div>
+  </div>
+  <div class="stat tone-warn">
+    <div class="stat-num">{{ reel_rate }}%</div>
+    <div class="stat-label">Reel Acceptance Rate</div>
+    <div class="stat-hint">{{ approved_reels }} approved of {{ total_reels }} total</div>
+  </div>
+  <div class="stat tone-neutral">
+    <div class="stat-num">{{ total_merchants }}</div>
+    <div class="stat-label">Total Registered Stores</div>
+    <div class="stat-hint">Across all sectors and cities</div>
+  </div>
+</div>
+
+<!-- Chart Card -->
+<div class="card" style="margin-bottom: 24px; padding: 20px;">
+  <div class="card-head" style="margin-bottom: 16px;">
+    <h3 style="font-size: 16px;">📈 Merchant Signups Timeline (Last 30 Days)</h3>
+  </div>
+  <div style="position: relative; height: 320px; width: 100%;">
+    <canvas id="signupsChart"></canvas>
+  </div>
+</div>
+
+<!-- Chart.js CDN and initialization -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  var ctx = document.getElementById('signupsChart');
+  if (!ctx) return;
+  var labels = {{ chart_labels | safe }};
+  var data = {{ chart_values | safe }};
+
+  new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: labels,
+      datasets: [{
+        label: 'New Merchant Onboardings',
+        data: data,
+        backgroundColor: '#2563eb',
+        borderColor: '#1d4ed8',
+        borderWidth: 1,
+        borderRadius: 4,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          display: true,
+          position: 'top',
+        },
+        tooltip: {
+          mode: 'index',
+          intersect: false,
+        }
+      },
+      scales: {
+        y: {
+          beginAtZero: true,
+          ticks: {
+            precision: 0
+          },
+          grid: {
+            color: '#f1f5f9'
+          }
+        },
+        x: {
+          grid: {
+            display: false
+          },
+          ticks: {
+            maxTicksLimit: 15,
+            font: {
+              size: 11
+            }
+          }
+        }
+      }
+    }
+  });
+});
+</script>
+{% endblock %}

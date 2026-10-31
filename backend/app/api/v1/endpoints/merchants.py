@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select, delete, func, asc, desc
@@ -10,14 +11,25 @@ from app.core.audit import audit_log
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.security import get_password_hash
-from app.models.merchant import KycStatus, Merchant, MerchantOnboardingDraft, MerchantStaff, Sector
+from app.models.merchant import (
+    KycStatus,
+    Merchant,
+    MerchantOnboardingDraft,
+    MerchantStaff,
+    Sector,
+    SubscriptionStatus,
+)
 import json
 from app.models.user import User, UserRole
 from app.schemas.common import ResponseEnvelope
 from app.services import merchant_engagement_service as engagement
 from app.services.cloudinary_service import CloudinaryService
 from app.services.moderation_alerts import notify_merchant_decision
-from app.services.settings_service import is_auto_approve_kyc_enabled
+from app.services.settings_service import (
+    get_auto_trial_duration_days,
+    is_auto_approve_kyc_enabled,
+    is_auto_trial_enabled,
+)
 from app.services.category_assets import (
     STORE_CATEGORIES_METADATA,
     normalize_sector,
@@ -172,6 +184,21 @@ async def onboard_merchant(
         if current_user.role != UserRole.MERCHANT:
             current_user.role = UserRole.MERCHANT
         current_user.onboarding_completed = True
+
+        # Self-heal legacy records if subscription fields are null
+        if existing_merchant.subscription_status is None:
+            now = datetime.now(timezone.utc)
+            auto_trial_on = await is_auto_trial_enabled(db)
+            trial_days = await get_auto_trial_duration_days(db)
+            if auto_trial_on and trial_days > 0:
+                existing_merchant.subscription_status = SubscriptionStatus.ACTIVE
+                existing_merchant.subscription_start_date = now
+                existing_merchant.subscription_expires_at = now + timedelta(days=trial_days)
+            else:
+                existing_merchant.subscription_status = SubscriptionStatus.INACTIVE
+                existing_merchant.subscription_start_date = now
+                existing_merchant.subscription_expires_at = None
+
         await db.flush()
         # Clean up any lingering draft
         await db.execute(delete(MerchantOnboardingDraft).where(MerchantOnboardingDraft.user_id == current_user.id))
@@ -200,6 +227,16 @@ async def onboard_merchant(
     auto_approve_kyc = await is_auto_approve_kyc_enabled(db)
     initial_kyc_status = KycStatus.APPROVED if auto_approve_kyc else KycStatus.PENDING
 
+    now = datetime.now(timezone.utc)
+    auto_trial_on = await is_auto_trial_enabled(db)
+    trial_days = await get_auto_trial_duration_days(db)
+    if auto_trial_on and trial_days > 0:
+        initial_sub_status = SubscriptionStatus.ACTIVE
+        trial_expires_at = now + timedelta(days=trial_days)
+    else:
+        initial_sub_status = SubscriptionStatus.INACTIVE
+        trial_expires_at = None
+
     merchant = Merchant(
         user_id=current_user.id,
         business_name=request.business_name,
@@ -214,6 +251,9 @@ async def onboard_merchant(
         cover_url=cover_url,
         logo_url=logo_url,
         description=request.description,
+        subscription_status=initial_sub_status,
+        subscription_start_date=now,
+        subscription_expires_at=trial_expires_at,
     )
     db.add(merchant)
 

@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{% block title %}User Management · {{ panel_name }}{% endblock %}
+{% block heading %}User Management & Access Control{% endblock %}
+{% block crumbs %}Browse registered shoppers, merchants, and staff accounts; manage active status{% endblock %}
+
+{% block content %}
+<!-- Search & Filter Bar -->
+<div class="card" style="margin-bottom: 20px; padding: 16px 20px;">
+  <form method="get" action="/admin/users" style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+    <input type="text" name="q" value="{{ search_query }}" placeholder="Search by phone number or name..."
+           class="input" style="flex: 1; min-width: 240px;">
+    <input type="hidden" name="role" value="{{ role_filter }}">
+    <button type="submit" class="btn btn-primary" style="padding: 8px 16px;">Search Users</button>
+    {% if search_query %}
+    <a href="/admin/users?role={{ role_filter }}" class="btn btn-ghost" style="border: 1px solid var(--line);">Clear</a>
+    {% endif %}
+  </form>
+</div>
+
+<!-- Role Filter Chips -->
+<div style="display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap;">
+  <a class="btn {% if role_filter == 'ALL' %}btn-primary{% else %}btn-ghost{% endif %}"
+     href="/admin/users?role=ALL{% if search_query %}&q={{ search_query }}{% endif %}" style="border: 1px solid var(--line); font-size: 12.5px;">
+    All Users ({{ total_users }})
+  </a>
+  <a class="btn {% if role_filter == 'SHOPPER' %}btn-primary{% else %}btn-ghost{% endif %}"
+     href="/admin/users?role=SHOPPER{% if search_query %}&q={{ search_query }}{% endif %}" style="border: 1px solid var(--line); font-size: 12.5px;">
+    Shoppers
+  </a>
+  <a class="btn {% if role_filter == 'MERCHANT' %}btn-primary{% else %}btn-ghost{% endif %}"
+     href="/admin/users?role=MERCHANT{% if search_query %}&q={{ search_query }}{% endif %}" style="border: 1px solid var(--line); font-size: 12.5px;">
+    Merchants
+  </a>
+  <a class="btn {% if role_filter == 'SUPER_ADMIN' %}btn-primary{% else %}btn-ghost{% endif %}"
+     href="/admin/users?role=SUPER_ADMIN{% if search_query %}&q={{ search_query }}{% endif %}" style="border: 1px solid var(--line); font-size: 12.5px;">
+    Super Admins
+  </a>
+</div>
+
+{% if not users %}
+<div class="card" style="text-align: center; padding: 48px 24px;">
+  <div style="font-size: 32px; margin-bottom: 12px;">👥</div>
+  <h2 style="font-size: 18px; margin-bottom: 6px;">No Users Found</h2>
+  <p class="muted" style="margin-bottom: 0;">No accounts found matching your query criteria.</p>
+</div>
+{% else %}
+<div class="card">
+  <table class="grid">
+    <thead>
+      <tr>
+        <th>Phone</th>
+        <th>Full Name</th>
+        <th>Role</th>
+        <th>Status</th>
+        <th>Joined Date</th>
+        <th style="text-align: right;">Access Action</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for u in users %}
+      {% set role_val = u.role.value if u.role and u.role.value is defined else (u.role | string) %}
+      <tr>
+        <td class="cell-lead">
+          <strong style="font-family: monospace;">{{ u.phone }}</strong>
+        </td>
+        <td>{{ u.full_name or '—' }}</td>
+        <td>
+          {% if role_val == 'SUPER_ADMIN' %}
+            <span class="badge badge-pill">Super Admin</span>
+          {% elif role_val == 'MERCHANT' %}
+            <span class="badge badge-good">Merchant</span>
+          {% else %}
+            <span class="badge badge-muted">Shopper</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if u.is_active %}
+            <span class="badge badge-good">Active</span>
+          {% else %}
+            <span class="badge badge-danger">Banned / Inactive</span>
+          {% endif %}
+        </td>
+        <td class="muted" style="font-size: 12px;">
+          {{ u.created_at.strftime('%Y-%m-%d %H:%M') if u.created_at else '—' }}
+        </td>
+        <td style="text-align: right;">
+          {% if role_val != 'SUPER_ADMIN' %}
+            {% if u.is_active %}
+            <form method="post" action="/admin/users/{{ u.id }}/ban" style="display: inline;"
+                  onsubmit="return confirm('Ban user {{ u.phone }}? They will not be able to log in.');">
+              <button type="submit" class="btn btn-danger" style="padding: 4px 10px; font-size: 11.5px;">
+                🚫 Ban User
+              </button>
+            </form>
+            {% else %}
+            <form method="post" action="/admin/users/{{ u.id }}/unban" style="display: inline;"
+                  onsubmit="return confirm('Restore access for {{ u.phone }}?');">
+              <button type="submit" class="btn btn-primary" style="background: #0f9d58; border-color: #0f9d58; padding: 4px 10px; font-size: 11.5px;">
+                ✓ Restore Access
+              </button>
+            </form>
+            {% endif %}
+          {% else %}
+            <span class="muted" style="font-size: 11px;">Protected</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <!-- Pagination -->
+  {% if total_pages > 1 %}
+  <div class="pagination" style="padding: 16px 20px; display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--line);">
+    <span class="page-info" style="font-size: 12px; color: var(--muted);">
+      Page {{ current_page }} of {{ total_pages }} ({{ total_users }} total users)
+    </span>
+    <div style="display: flex; gap: 6px;">
+      {% if current_page > 1 %}
+      <a href="/admin/users?page={{ current_page - 1 }}&role={{ role_filter }}{% if search_query %}&q={{ search_query }}{% endif %}" class="btn btn-ghost" style="border: 1px solid var(--line); padding: 4px 10px; font-size: 12px;">
+        ← Prev
+      </a>
+      {% endif %}
+      {% if current_page < total_pages %}
+      <a href="/admin/users?page={{ current_page + 1 }}&role={{ role_filter }}{% if search_query %}&q={{ search_query }}{% endif %}" class="btn btn-ghost" style="border: 1px solid var(--line); padding: 4px 10px; font-size: 12px;">
+        Next →
+      </a>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

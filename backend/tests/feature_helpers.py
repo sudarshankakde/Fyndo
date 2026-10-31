@@ -1,7 +1,7 @@
-"""Seeding helpers shared by the client-requirement feature tests."""
 import uuid
 from dataclasses import dataclass
-from typing import Optional
+from datetime import datetime, timedelta, timezone
+from typing import Optional, Any
 
 from app.core.security import create_access_token, get_password_hash
 
@@ -44,13 +44,27 @@ async def seed_user(role: str = "SHOPPER", full_name: str = "Test Shopper"):
         return user.id, create_access_token(subject=str(user.id), role=role)
 
 
-async def seed_store(*, with_staff: bool = False, can_upload_reels: bool = False,
-                     sector: str = "FOOD", latitude: float = 21.1458,
-                     longitude: float = 79.0882) -> SeededStore:
+async def seed_store(
+    *,
+    with_staff: bool = False,
+    can_upload_reels: bool = False,
+    sector: str = "FOOD",
+    latitude: float = 21.1458,
+    longitude: float = 79.0882,
+    subscription_status: Optional[Any] = None,
+    subscription_start_date: Optional[datetime] = None,
+    subscription_expires_at: Optional[datetime] = None,
+) -> SeededStore:
     from app.core.database import async_session_factory
-    from app.models.merchant import KycStatus, Merchant, MerchantStaff, Sector
+    from app.models.merchant import KycStatus, Merchant, MerchantStaff, Sector, SubscriptionStatus
 
+    await prepare_schema()
     owner_id, owner_token = await seed_user("MERCHANT", "Store Owner")
+    now = datetime.now(timezone.utc)
+    sub_status = subscription_status if subscription_status is not None else SubscriptionStatus.ACTIVE
+    sub_start = subscription_start_date if subscription_start_date is not None else now
+    sub_expires = subscription_expires_at if subscription_expires_at is not None else (now + timedelta(days=90))
+
     async with async_session_factory() as session:
         merchant = Merchant(
             user_id=owner_id,
@@ -62,6 +76,9 @@ async def seed_store(*, with_staff: bool = False, can_upload_reels: bool = False
             longitude=longitude,
             kyc_doc_url="https://res.cloudinary.com/fyndo/kyc/doc.pdf",
             kyc_status=KycStatus.APPROVED,
+            subscription_status=sub_status,
+            subscription_start_date=sub_start,
+            subscription_expires_at=sub_expires,
         )
         session.add(merchant)
         await session.flush()

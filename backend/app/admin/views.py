@@ -1,13 +1,11 @@
-"""Dashboard, list and detail views for the HTML super-admin panel."""
 import logging
 import uuid
-from typing import Any, Dict, Optional
+from datetime import datetime, timezone
+from typing import Any, Dict
 
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import RedirectResponse
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from app.admin.deps import current_admin
 from app.admin.helpers import form_fields, get_row, meta_or_404, panel_context, redirect_to
@@ -28,17 +26,17 @@ from app.models import (
     Notification,
     Reel,
     ReelStatus,
+    SubscriptionStatus,
     UserCoupon,
 )
-from app.models.system_settings import AUTO_APPROVE_KYC, AUTO_APPROVE_REELS
-from app.services.audit_service import (
-    enrich_logs_with_user_details,
-    get_audit_stats,
-    query_audit_logs,
+from app.models.audit_log import AuditLog
+from app.services.audit_service import get_audit_stats
+from app.services.settings_service import (
+    get_auto_trial_duration_days,
+    is_auto_approve_enabled,
+    is_auto_approve_kyc_enabled,
+    is_auto_trial_enabled,
 )
-from app.services.moderation_alerts import notify_reel_decision
-from app.services.reel_lifecycle_service import start_offer_clock
-from app.services.settings_service import is_auto_approve_enabled, is_auto_approve_kyc_enabled, set_setting
 
 logger = logging.getLogger("fyndo.admin")
 router = APIRouter()
@@ -46,51 +44,6 @@ router = APIRouter()
 
 async def _scalar(db: AsyncSession, stmt) -> int:
     return int((await db.execute(stmt)).scalar_one() or 0)
-
-
-async def _highlights(db: AsyncSession) -> list:
-    """Four at-a-glance counters that matter to a live operator."""
-    return [
-        {
-            "label": "Awaiting KYC review",
-            "value": await _scalar(
-                db,
-                select(func.count())
-                .select_from(Merchant)
-                .where(Merchant.kyc_status == KycStatus.PENDING.value),
-            ),
-            "href": "/admin/merchants?q=",
-            "tone": "warn",
-        },
-        {
-            "label": "Reels pending moderation",
-            "value": await _scalar(
-                db,
-                select(func.count())
-                .select_from(Reel)
-                .where(Reel.status == ReelStatus.PENDING_MODERATION.value),
-            ),
-            "href": "/admin/moderation",
-            "tone": "warn",
-        },
-        {
-            "label": "Coupons redeemed",
-            "value": await _scalar(
-                db,
-                select(func.count())
-                .select_from(UserCoupon)
-                .where(UserCoupon.status == CouponStatus.REDEEMED.value),
-            ),
-            "href": "/admin/user_coupons",
-            "tone": "good",
-        },
-        {
-            "label": "Inbox alerts created",
-            "value": await _scalar(db, select(func.count()).select_from(Notification)),
-            "href": "/admin/notifications",
-            "tone": "neutral",
-        },
-    ]
 
 
 @router.get("/")
@@ -103,9 +56,63 @@ async def dashboard(
     for meta in ALL_MODELS:
         stats.append({"meta": meta, "count": await count_rows(db, meta)})
     total_records = sum(item["count"] for item in stats)
+    now = datetime.now(timezone.utc)
+
+    # Subscription summary cards
+    active_sub_count = await _scalar(
+        db,
+        select(func.count(Merchant.id)).where(
+            Merchant.subscription_status == SubscriptionStatus.ACTIVE,
+            or_(Merchant.subscription_expires_at.is_(None), Merchant.subscription_expires_at > now),
+        ),
+    )
+    expired_sub_count = await _scalar(
+        db,
+        select(func.count(Merchant.id)).where(
+            or_(
+                Merchant.subscription_status == SubscriptionStatus.EXPIRED,
+                Merchant.subscription_expires_at <= now,
+            )
+        ),
+    )
+    inactive_sub_count = await _scalar(
+        db,
+        select(func.count(Merchant.id)).where(
+            Merchant.subscription_status == SubscriptionStatus.INACTIVE
+        ),
+    )
+    trial_sub_count = await _scalar(
+        db,
+        select(func.count(Merchant.id)).where(
+            Merchant.subscription_status == SubscriptionStatus.ACTIVE
+        ),
+    )
+
+    # Action queues
+    kyc_queue_count = await _scalar(
+        db,
+        select(func.count(Merchant.id)).where(Merchant.kyc_status == KycStatus.PENDING),
+    )
+    pending_reels_count = await _scalar(
+        db,
+        select(func.count(Reel.id)).where(Reel.status == ReelStatus.PENDING_MODERATION),
+    )
+
+    # Recent 10 audit logs
+    recent_audits = (
+        await db.execute(select(AuditLog).order_by(AuditLog.timestamp.desc()).limit(10))
+    ).scalars().all()
+
     system_resources = get_system_resources()
     redis_stats = await get_redis_stats()
     db_stats = await get_db_stats(db)
+
+    highlights = [
+        {"label": "Awaiting KYC review", "value": kyc_queue_count, "href": "/admin/kyc", "tone": "warn"},
+        {"label": "Reels pending moderation", "value": pending_reels_count, "href": "/admin/moderation", "tone": "warn"},
+        {"label": "Coupons redeemed", "value": await _scalar(db, select(func.count()).select_from(UserCoupon).where(UserCoupon.status == CouponStatus.REDEEMED)), "href": "/admin/user_coupons", "tone": "good"},
+        {"label": "Inbox alerts created", "value": await _scalar(db, select(func.count()).select_from(Notification)), "href": "/admin/notifications", "tone": "neutral"},
+    ]
 
     return templates.TemplateResponse(
         request,
@@ -114,10 +121,19 @@ async def dashboard(
             request,
             admin,
             stats=stats,
-            highlights=await _highlights(db),
+            highlights=highlights,
             total_records=total_records,
+            active_sub_count=active_sub_count,
+            expired_sub_count=expired_sub_count,
+            inactive_sub_count=inactive_sub_count,
+            trial_sub_count=trial_sub_count,
+            kyc_queue_count=kyc_queue_count,
+            pending_reels_count=pending_reels_count,
+            recent_audits=recent_audits,
             auto_approve_reels=await is_auto_approve_enabled(db),
             auto_approve_kyc=await is_auto_approve_kyc_enabled(db),
+            auto_trial_enabled=await is_auto_trial_enabled(db),
+            auto_trial_duration_days=await get_auto_trial_duration_days(db),
             system=system_resources,
             redis=redis_stats,
             database=db_stats,
@@ -172,198 +188,6 @@ async def flush_cache_action(
         return redirect_to(request, f"/admin/system?ok=Flushed+{deleted}+cache+keys+successfully")
     except Exception as exc:
         return redirect_to(request, f"/admin/system?err=Cache+flush+failed:+{str(exc)}")
-
-
-@router.post("/settings/auto-approve")
-async def toggle_auto_approve(
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-    admin: Dict[str, Any] = Depends(current_admin),
-):
-    """Dashboard switch: publish new merchant reels without manual review."""
-    form = await request.form()
-    enabled = form.get("enabled") == "on"
-    await set_setting(db, AUTO_APPROVE_REELS, enabled)
-    await db.commit()
-    audit_log(
-        "system_settings.update",
-        actor_id=admin.get("sub"),
-        actor_role="SUPER_ADMIN",
-        target_type="system_settings",
-        target_id=AUTO_APPROVE_REELS,
-        value=enabled,
-        source="admin_panel",
-    )
-    return RedirectResponse("/admin/", status_code=303)
-
-
-@router.post("/settings/auto-approve-kyc")
-async def toggle_auto_approve_kyc(
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-    admin: Dict[str, Any] = Depends(current_admin),
-):
-    """Dashboard switch: auto-approve merchant KYC store applications upon submission."""
-    form = await request.form()
-    enabled = form.get("enabled") == "on"
-    await set_setting(db, AUTO_APPROVE_KYC, enabled)
-    await db.commit()
-    audit_log(
-        "system_settings.update",
-        actor_id=admin.get("sub"),
-        actor_role="SUPER_ADMIN",
-        target_type="system_settings",
-        target_id=AUTO_APPROVE_KYC,
-        value=enabled,
-        source="admin_panel",
-    )
-    return RedirectResponse("/admin/", status_code=303)
-
-
-@router.get("/moderation")
-async def moderation_view(
-    request: Request,
-    status: str = "PENDING_MODERATION",
-    db: AsyncSession = Depends(get_db),
-    admin: Dict[str, Any] = Depends(current_admin),
-):
-    stmt = (
-        select(Reel)
-        .options(selectinload(Reel.merchant), selectinload(Reel.coupon_template))
-        .order_by(Reel.created_at.desc())
-    )
-    filter_norm = status.upper().strip()
-    if filter_norm != "ALL":
-        try:
-            status_enum = ReelStatus(filter_norm)
-            stmt = stmt.where(Reel.status == status_enum)
-        except ValueError:
-            pass
-
-    reels = (await db.execute(stmt)).scalars().all()
-    pending_count = await _scalar(
-        db,
-        select(func.count()).select_from(Reel).where(Reel.status == ReelStatus.PENDING_MODERATION)
-    )
-
-    return templates.TemplateResponse(
-        request,
-        "moderation.html",
-        panel_context(
-            request,
-            admin,
-            reels=reels,
-            current_filter=filter_norm,
-            pending_count=pending_count,
-        ),
-    )
-
-
-@router.post("/moderation/reels/{reel_id}/approve")
-async def approve_reel_action(
-    reel_id: uuid.UUID,
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-    admin: Dict[str, Any] = Depends(current_admin),
-):
-    live = (selectinload(Reel.merchant), selectinload(Reel.coupon_template))
-    reel = (await db.execute(select(Reel).options(*live).where(Reel.id == reel_id))).scalars().first()
-    if reel:
-        reel.status = ReelStatus.APPROVED
-        reel.rejection_reason = None
-        if reel.expires_at is None:
-            start_offer_clock(reel, reel.coupon_template)
-        await db.flush()
-        audit_log(
-            "reel.moderate",
-            actor_role="SUPER_ADMIN",
-            target_type="reel",
-            target_id=reel.id,
-            decision="APPROVE",
-            status="APPROVED",
-        )
-        owner_id = reel.merchant.user_id if reel.merchant else None
-        await notify_reel_decision(db, reel=reel, owner_id=owner_id, decision="APPROVE")
-        await db.commit()
-    return RedirectResponse(url="/admin/moderation?ok=Reel+approved+and+published+live", status_code=303)
-
-
-@router.post("/moderation/reels/{reel_id}/reject")
-async def reject_reel_action(
-    reel_id: uuid.UUID,
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-    admin: Dict[str, Any] = Depends(current_admin),
-):
-    form = await request.form()
-    reason = str(form.get("rejection_reason") or "Violated content or audio guidelines.").strip()
-    live = (selectinload(Reel.merchant), selectinload(Reel.coupon_template))
-    reel = (await db.execute(select(Reel).options(*live).where(Reel.id == reel_id))).scalars().first()
-    if reel:
-        reel.status = ReelStatus.REJECTED
-        reel.rejection_reason = reason
-        await db.flush()
-        audit_log(
-            "reel.moderate",
-            actor_role="SUPER_ADMIN",
-            target_type="reel",
-            target_id=reel.id,
-            decision="REJECT",
-            status="REJECTED",
-            rejection_reason=reason,
-        )
-        owner_id = reel.merchant.user_id if reel.merchant else None
-        await notify_reel_decision(db, reel=reel, owner_id=owner_id, decision="REJECT")
-        await db.commit()
-    return RedirectResponse(url="/admin/moderation?ok=Reel+rejected", status_code=303)
-
-
-@router.get("/audit-logs")
-async def audit_logs_view(
-    request: Request,
-    search: str = "",
-    method: str = "ALL",
-    status: str = "ALL",
-    user_role: str = "ALL",
-    db_only: str = "0",
-    page: int = 1,
-    db: AsyncSession = Depends(get_db),
-    admin: Dict[str, Any] = Depends(current_admin),
-):
-    """Production request and database query inspection view."""
-    has_db_mutations = db_only in ("1", "true", "True")
-    logs, total_count, page_count = await query_audit_logs(
-        db,
-        method=method,
-        status_filter=status,
-        user_role=user_role,
-        search=search,
-        has_db_mutations=has_db_mutations,
-        page=page,
-        page_size=50,
-    )
-    stats = await get_audit_stats(db, hours=24)
-    user_map = await enrich_logs_with_user_details(db, logs)
-
-    return templates.TemplateResponse(
-        request,
-        "audit_logs.html",
-        panel_context(
-            request,
-            admin,
-            logs=logs,
-            stats=stats,
-            user_map=user_map,
-            total_count=total_count,
-            page_count=page_count,
-            current_page=page,
-            search=search,
-            method=method,
-            status_filter=status,
-            user_role=user_role,
-            has_db_mutations=has_db_mutations,
-        ),
-    )
 
 
 @router.get("/{model_key}")
@@ -438,6 +262,7 @@ async def detail_view(
             admin,
             meta=meta,
             row_pk=pk,
+            row=row,
             title=str(getattr(row, meta.label_column, None) or pk) if meta.label_column else pk,
             fields=serialize_detail(meta, row),
         ),

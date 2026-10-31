@@ -11,6 +11,9 @@ from app.core.database import Base
 
 AUTO_APPROVE_REELS = "auto_approve_reels"
 AUTO_APPROVE_KYC = "auto_approve_kyc"
+AUTO_TRIAL_ENABLED = "auto_trial_enabled"
+AUTO_TRIAL_DURATION_DAYS = "auto_trial_duration_days"
+MAINTENANCE_MODE = "maintenance_mode"
 
 # Defaults applied when a key has never been written.
 SETTING_DEFAULTS: dict[str, dict[str, Any]] = {
@@ -21,6 +24,18 @@ SETTING_DEFAULTS: dict[str, dict[str, Any]] = {
     AUTO_APPROVE_KYC: {
         "value": False,
         "description": "Automatically verify merchant KYC store applications upon onboarding.",
+    },
+    AUTO_TRIAL_ENABLED: {
+        "value": True,
+        "description": "Automatically grant a free trial when a merchant completes onboarding.",
+    },
+    AUTO_TRIAL_DURATION_DAYS: {
+        "value": 90,
+        "description": "Default trial duration in days automatically granted to new merchants upon onboarding.",
+    },
+    MAINTENANCE_MODE: {
+        "value": False,
+        "description": "Put platform in maintenance mode (read-only / maintenance banner).",
     },
 }
 

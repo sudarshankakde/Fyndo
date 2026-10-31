@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+{% block title %}KYC Verification Queue · {{ panel_name }}{% endblock %}
+{% block heading %}Store KYC Verification Queue{% endblock %}
+{% block crumbs %}Review business verification documents and authorize store onboarding{% endblock %}
+
+{% block content %}
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 12px;">
+  <!-- Filter Chips -->
+  <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+    <a class="btn {% if current_filter == 'PENDING' %}btn-primary{% else %}btn-ghost{% endif %}"
+       href="/admin/kyc?status=PENDING" style="border: 1px solid var(--line);">
+      Pending Verification <span class="badge {% if pending_count > 0 %}badge-warn{% else %}badge-muted{% endif %}" style="margin-left: 6px;">{{ pending_count }}</span>
+    </a>
+    <a class="btn {% if current_filter == 'APPROVED' %}btn-primary{% else %}btn-ghost{% endif %}"
+       href="/admin/kyc?status=APPROVED" style="border: 1px solid var(--line);">
+      Approved Stores
+    </a>
+    <a class="btn {% if current_filter == 'REJECTED' %}btn-primary{% else %}btn-ghost{% endif %}"
+       href="/admin/kyc?status=REJECTED" style="border: 1px solid var(--line);">
+      Rejected
+    </a>
+    <a class="btn {% if current_filter == 'ALL' %}btn-primary{% else %}btn-ghost{% endif %}"
+       href="/admin/kyc?status=ALL" style="border: 1px solid var(--line);">
+      All Stores
+    </a>
+  </div>
+
+  <!-- Bulk Action -->
+  {% if pending_count > 0 and (current_filter == 'PENDING' or current_filter == 'ALL') %}
+  <form method="post" action="/admin/kyc/bulk-approve" onsubmit="return confirm('Are you sure you want to approve all {{ pending_count }} pending merchant KYC submissions?');">
+    <button type="submit" class="btn btn-primary" style="background: #0f9d58; border-color: #0f9d58;">
+      ⚡ Bulk Approve All Pending ({{ pending_count }})
+    </button>
+  </form>
+  {% endif %}
+</div>
+
+{% if not merchants %}
+<div class="card" style="text-align: center; padding: 48px 24px;">
+  <div style="font-size: 32px; margin-bottom: 12px;">✅</div>
+  <h2 style="font-size: 18px; margin-bottom: 6px;">Queue Clear</h2>
+  <p class="muted" style="margin-bottom: 0;">No merchants found under filter <strong>{{ current_filter }}</strong>.</p>
+</div>
+{% else %}
+<div class="card">
+  <table class="grid">
+    <thead>
+      <tr>
+        <th>Merchant & Store</th>
+        <th>Owner Contact</th>
+        <th>City & Sector</th>
+        <th>KYC Document</th>
+        <th>Submitted Date</th>
+        <th>Status</th>
+        <th style="text-align: right;">Review Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for m in merchants %}
+      {% set k_val = m.kyc_status.value if m.kyc_status and m.kyc_status.value is defined else (m.kyc_status | string) %}
+      <tr>
+        <td class="cell-lead">
+          <a href="/admin/merchants/{{ m.id }}" style="font-weight: 600; color: var(--text);">
+            {{ m.business_name }}
+          </a>
+          <div class="muted" style="font-size: 11px;">GSTIN: {{ m.gstin or 'Not provided' }}</div>
+        </td>
+        <td>
+          <div>{{ m.owner.full_name if m.owner and m.owner.full_name else '—' }}</div>
+          <div class="muted" style="font-size: 11px;">{{ m.phone or (m.owner.phone if m.owner else '—') }}</div>
+        </td>
+        <td>
+          <div>{{ m.city or '—' }}</div>
+          <div class="muted" style="font-size: 11px;">{{ m.sector.value if m.sector and m.sector.value is defined else (m.sector or '—') }}</div>
+        </td>
+        <td>
+          {% if m.kyc_doc_url %}
+          <a href="{{ m.kyc_doc_url }}" target="_blank" rel="noopener noreferrer" class="btn btn-ghost" style="padding: 4px 8px; font-size: 12px; border: 1px solid var(--line);">
+            📄 View Document
+          </a>
+          {% else %}
+          <span class="muted" style="font-size: 12px;">No doc</span>
+          {% endif %}
+        </td>
+        <td class="muted" style="font-size: 12px;">
+          {{ m.created_at.strftime('%Y-%m-%d %H:%M') if m.created_at else '—' }}
+        </td>
+        <td>
+          {% if k_val == 'APPROVED' %}
+            <span class="badge badge-good">Approved</span>
+          {% elif k_val == 'REJECTED' %}
+            <span class="badge badge-danger">Rejected</span>
+          {% else %}
+            <span class="badge badge-warn">Pending Review</span>
+          {% endif %}
+        </td>
+        <td style="text-align: right;">
+          <div style="display: inline-flex; gap: 6px; align-items: center; justify-content: flex-end;">
+            {% if k_val != 'APPROVED' %}
+            <form method="post" action="/admin/kyc/{{ m.id }}/approve" style="display: inline;">
+              <button type="submit" class="btn btn-primary" style="padding: 4px 10px; font-size: 12px; background: #0f9d58; border-color: #0f9d58;">
+                ✓ Approve
+              </button>
+            </form>
+            {% endif %}
+
+            {% if k_val != 'REJECTED' %}
+            <details style="display: inline-block; text-align: left; position: relative;">
+              <summary class="btn btn-danger" style="padding: 4px 10px; font-size: 12px; cursor: pointer; list-style: none;">
+                ✕ Reject...
+              </summary>
+              <div style="position: absolute; right: 0; z-index: 100; background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.15); width: 280px; margin-top: 4px;">
+                <form method="post" action="/admin/kyc/{{ m.id }}/reject">
+                  <div style="font-size: 12px; font-weight: 600; margin-bottom: 6px;">Select Rejection Reason:</div>
+                  <select class="input" style="width: 100%; font-size: 11.5px; margin-bottom: 6px;"
+                          onchange="if(this.value){ document.getElementById('kyc-reason-{{ m.id }}').value = this.value; }">
+                    <option value="">Standard reasons...</option>
+                    <option value="Submitted documents do not match business registration details.">Mismatch with registration details</option>
+                    <option value="Document image is blurred, unreadable, or corrupted.">Blurred or unreadable document</option>
+                    <option value="Document is expired or invalid under regulatory standards.">Expired or invalid document</option>
+                    <option value="Store address does not match uploaded registration document.">Store address does not match</option>
+                    <option value="GSTIN details could not be validated with GST portal.">Invalid or unverifiable GSTIN</option>
+                  </select>
+                  <input type="text" id="kyc-reason-{{ m.id }}" name="rejection_reason" placeholder="Specific rejection details..."
+                         class="input" style="width: 100%; font-size: 11.5px; margin-bottom: 8px;" required>
+                  <button type="submit" class="btn btn-danger" style="width: 100%; font-size: 12px; padding: 6px;">
+                    Confirm Rejection
+                  </button>
+                </form>
+              </div>
+            </details>
+            {% endif %}
+
+            <a href="/admin/merchants/{{ m.id }}" class="btn btn-ghost" style="padding: 4px 8px; font-size: 12px;">
+              Details →
+            </a>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endblock %}

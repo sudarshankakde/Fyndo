@@ -1,0 +1,303 @@
+{% extends "base.html" %}
+{% block title %}{{ merchant.business_name }} · {{ panel_name }}{% endblock %}
+{% block heading %}{{ merchant.business_name }}{% endblock %}
+{% block crumbs %}<a href="/admin/merchants" style="color: var(--blue);">Merchants</a> / Store Profile & Control{% endblock %}
+
+{% block content %}
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 24px;">
+
+  <!-- Store Profile & KYC Verification Card -->
+  <div class="card">
+    <div class="card-head" style="display: flex; justify-content: space-between; align-items: center;">
+      <h3>Store Profile & KYC</h3>
+      {% set k_val = merchant.kyc_status.value if merchant.kyc_status and merchant.kyc_status.value is defined else (merchant.kyc_status | string) %}
+      {% if k_val == 'APPROVED' %}
+        <span class="badge badge-good">KYC Approved</span>
+      {% elif k_val == 'REJECTED' %}
+        <span class="badge badge-danger">KYC Rejected</span>
+      {% else %}
+        <span class="badge badge-warn">KYC Pending</span>
+      {% endif %}
+    </div>
+    <div class="card-body">
+      <dl class="detail-grid" style="margin-bottom: 16px;">
+        <dt>Owner Name</dt><dd>{{ merchant.owner.full_name if merchant.owner else '—' }}</dd>
+        <dt>Phone</dt><dd><code>{{ merchant.phone or (merchant.owner.phone if merchant.owner else '—') }}</code></dd>
+        <dt>Sector</dt><dd>{{ merchant.sector.value if merchant.sector and merchant.sector.value is defined else (merchant.sector or '—') }}</dd>
+        <dt>City</dt><dd>{{ merchant.city or '—' }}</dd>
+        <dt>Store Address</dt><dd>{{ merchant.address_text or '—' }}</dd>
+        <dt>GSTIN</dt><dd>{{ merchant.gstin or 'Not provided' }}</dd>
+        <dt>Joined</dt><dd>{{ merchant.created_at.strftime('%Y-%m-%d %H:%M') if merchant.created_at else '—' }}</dd>
+      </dl>
+
+      <!-- KYC Document Preview & Decision -->
+      <div style="border-top: 1px solid var(--line); padding-top: 14px;">
+        <div style="font-weight: 600; font-size: 13px; margin-bottom: 8px;">Uploaded Verification Document:</div>
+        {% if merchant.kyc_doc_url %}
+          <div style="margin-bottom: 12px;">
+            <a href="{{ merchant.kyc_doc_url }}" target="_blank" rel="noopener noreferrer" class="btn btn-ghost" style="border: 1px solid var(--line); font-size: 12px; padding: 4px 10px;">
+              📄 Open Document Preview ↗
+            </a>
+          </div>
+        {% else %}
+          <p class="muted" style="font-size: 12px;">No verification document submitted.</p>
+        {% endif %}
+
+        {% if merchant.kyc_rejection_reason %}
+        <div style="background: var(--danger-bg); color: var(--danger); border-radius: 6px; padding: 8px 10px; font-size: 12px; margin-bottom: 12px;">
+          <strong>Rejection Reason:</strong> {{ merchant.kyc_rejection_reason }}
+        </div>
+        {% endif %}
+
+        <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+          {% if k_val != 'APPROVED' %}
+          <form method="post" action="/admin/merchants/{{ merchant.id }}/kyc/approve">
+            <button type="submit" class="btn btn-primary" style="background: #0f9d58; border-color: #0f9d58;">
+              ✓ Approve KYC Verification
+            </button>
+          </form>
+          {% endif %}
+
+          <details style="position: relative;">
+            <summary class="btn btn-danger" style="cursor: pointer; list-style: none;">
+              ✕ Reject KYC...
+            </summary>
+            <div style="position: absolute;bottom: 50px; left: 0; z-index: 100; background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.15); width: 280px; margin-top: 4px;">
+              <form method="post" action="/admin/merchants/{{ merchant.id }}/kyc/reject">
+                <div style="font-size: 12px; font-weight: 600; margin-bottom: 6px;">Select / Enter Reason:</div>
+                <select class="input" style="width: 100%; font-size: 11.5px; margin-bottom: 6px;"
+                        onchange="if(this.value){ document.getElementById('kyc-reason-detail').value = this.value; }">
+                  <option value="">Standard reasons...</option>
+                  <option value="Submitted documents do not match business registration details.">Mismatch with registration details</option>
+                  <option value="Document image is blurred or unreadable.">Blurred / unreadable document</option>
+                  <option value="Document is expired or invalid.">Expired or invalid document</option>
+                  <option value="Store address does not match uploaded registration document.">Address mismatch</option>
+                </select>
+                <input type="text" id="kyc-reason-detail" name="rejection_reason" placeholder="Rejection details..."
+                       class="input" style="width: 100%; font-size: 11.5px; margin-bottom: 8px;" required>
+                <button type="submit" class="btn btn-danger" style="width: 100%; font-size: 12px; padding: 6px;">
+                  Confirm Rejection
+                </button>
+              </form>
+            </div>
+          </details>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Subscription Manager Card -->
+  <div class="card">
+    <div class="card-head" style="display: flex; justify-content: space-between; align-items: center;">
+      <h3>Subscription &amp; Trial Management</h3>
+      {% set eff = merchant.effective_subscription_status %}
+      {% if eff == 'ACTIVE' %}
+        <span class="badge badge-good">Active</span>
+      {% elif eff == 'EXPIRED' %}
+        <span class="badge badge-danger">Expired</span>
+      {% else %}
+        <span class="badge badge-muted">{{ eff }}</span>
+      {% endif %}
+    </div>
+    <div class="card-body">
+      <dl class="detail-grid" style="margin-bottom: 16px;">
+        <dt>Start Date</dt><dd>{{ merchant.subscription_start_date.strftime('%Y-%m-%d %H:%M') if merchant.subscription_start_date else '—' }}</dd>
+        <dt>Expiration Date</dt>
+        <dd>
+          <strong>{{ merchant.subscription_expires_at.strftime('%Y-%m-%d %H:%M') if merchant.subscription_expires_at else 'No expiry set' }}</strong>
+        </dd>
+        <dt>Remaining Time</dt>
+        <dd>
+          {% if merchant.subscription_expires_at %}
+            {% if merchant.subscription_expires_at > now %}
+              <span style="color: var(--good); font-weight: 600;">{{ (merchant.subscription_expires_at - now).days }} days remaining</span>
+            {% else %}
+              <span style="color: var(--danger); font-weight: 600;">Lapsed {{ (now - merchant.subscription_expires_at).days }} days ago</span>
+            {% endif %}
+          {% else %}
+            <span class="muted">—</span>
+          {% endif %}
+        </dd>
+      </dl>
+
+      <!-- Quick Extend Actions -->
+      <div style="border-top: 1px solid var(--line); padding-top: 14px; margin-bottom: 14px;">
+        <div style="font-weight: 600; font-size: 12.5px; margin-bottom: 8px;">Extend Trial / Subscription Duration:</div>
+        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+          <form method="post" action="/admin/merchants/{{ merchant.id }}/subscription/extend?duration_days=30">
+            <button type="submit" class="btn btn-ghost" style="border: 1px solid var(--line); padding: 5px 10px; font-size: 12px;">+30 Days</button>
+          </form>
+          <form method="post" action="/admin/merchants/{{ merchant.id }}/subscription/extend?duration_days=60">
+            <button type="submit" class="btn btn-ghost" style="border: 1px solid var(--line); padding: 5px 10px; font-size: 12px;">+60 Days</button>
+          </form>
+          <form method="post" action="/admin/merchants/{{ merchant.id }}/subscription/extend?duration_days=90">
+            <button type="submit" class="btn btn-ghost" style="border: 1px solid var(--line); padding: 5px 10px; font-size: 12px;">+90 Days</button>
+          </form>
+          {% if eff != 'ACTIVE' %}
+          <form method="post" action="/admin/merchants/{{ merchant.id }}/subscription/activate">
+            <button type="submit" class="btn btn-primary" style="padding: 5px 12px; font-size: 12px;">Activate Subscription</button>
+          </form>
+          {% endif %}
+        </div>
+      </div>
+
+      <!-- Set Specific Expiry Form -->
+      <div style="border-top: 1px solid var(--line); padding-top: 14px; margin-bottom: 14px;">
+        <div style="font-weight: 600; font-size: 12.5px; margin-bottom: 8px;">Set Exact Expiration Date:</div>
+        <form method="post" action="/admin/merchants/{{ merchant.id }}/subscription/set-expiry" style="display: flex; gap: 8px; align-items: center;">
+          <input type="date" name="expiry_date" class="input" style="padding: 5px 8px; font-size: 12px;" required>
+          <button type="submit" class="btn btn-primary" style="padding: 5px 12px; font-size: 12px;">Set Expiry</button>
+        </form>
+      </div>
+
+      <!-- Deactivate Action -->
+      {% if eff == 'ACTIVE' %}
+      <div style="border-top: 1px solid var(--line); padding-top: 14px;">
+        <form method="post" action="/admin/merchants/{{ merchant.id }}/subscription/deactivate"
+              onsubmit="return confirm('Suspend subscription for {{ merchant.business_name }}?');">
+          <button type="submit" class="btn btn-danger" style="font-size: 12px; padding: 5px 12px;">
+            Deactivate / Suspend Subscription
+          </button>
+        </form>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+</div>
+
+<!-- Staff / Cashier List -->
+<div class="card" style="margin-bottom: 24px;">
+  <div class="card-head">
+    <h3>Store Staff & Cashier Terminals ({{ staff | length }})</h3>
+  </div>
+  {% if not staff %}
+    <div style="padding: 24px; text-align: center;" class="muted">No staff accounts registered for this merchant.</div>
+  {% else %}
+    <table class="grid">
+      <thead>
+        <tr>
+          <th>Staff Name</th>
+          <th>Phone</th>
+          <th>Role / Permissions</th>
+          <th>Status</th>
+          <th>Created Date</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in staff %}
+        <tr>
+          <td><strong>{{ s.staff_name }}</strong></td>
+          <td><code>{{ s.phone }}</code></td>
+          <td class="muted" style="font-size: 12px;">
+            {% if s.can_upload_reels %}Reel Upload{% endif %}
+            {% if s.can_manage_content %}· Content Manager{% endif %}
+            Cashier Terminal
+          </td>
+          <td>
+            {% if s.is_active %}
+              <span class="badge badge-good">Active</span>
+            {% else %}
+              <span class="badge badge-danger">Inactive</span>
+            {% endif %}
+          </td>
+          <td class="muted" style="font-size: 12px;">{{ s.created_at.strftime('%Y-%m-%d') if s.created_at else '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+</div>
+
+<!-- Reel History -->
+<div class="card" style="margin-bottom: 24px;">
+  <div class="card-head">
+    <h3>Reel Promotion History ({{ reels | length }})</h3>
+  </div>
+  {% if not reels %}
+    <div style="padding: 24px; text-align: center;" class="muted">No video reels published yet.</div>
+  {% else %}
+    <table class="grid">
+      <thead>
+        <tr>
+          <th>Title</th>
+          <th>Duration</th>
+          <th>Status</th>
+          <th>Views</th>
+          <th>Created Date</th>
+          <th style="text-align: right;">Moderation Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in reels %}
+        {% set r_stat = r.status.value if r.status and r.status.value is defined else (r.status | string) %}
+        <tr>
+          <td class="cell-lead">
+            <strong>{{ r.title }}</strong>
+            {% if r.video_url %}
+            <div style="font-size: 11px;"><a href="{{ r.video_url }}" target="_blank" rel="noopener">Video link ↗</a></div>
+            {% endif %}
+          </td>
+          <td class="muted" style="font-size: 12px;">{{ r.duration_seconds }}s</td>
+          <td>
+            {% if r_stat == 'APPROVED' %}
+              <span class="badge badge-good">Approved</span>
+            {% elif r_stat == 'REJECTED' %}
+              <span class="badge badge-danger">Rejected</span>
+            {% else %}
+              <span class="badge badge-warn">Pending Moderation</span>
+            {% endif %}
+          </td>
+          <td style="font-size: 12px;">{{ r.views_count or 0 }}</td>
+          <td class="muted" style="font-size: 12px;">{{ r.created_at.strftime('%Y-%m-%d %H:%M') if r.created_at else '—' }}</td>
+          <td style="text-align: right;">
+            {% if r_stat == 'PENDING_MODERATION' %}
+            <form method="post" action="/admin/moderation/reels/{{ r.id }}/approve" style="display: inline;">
+              <button type="submit" class="btn btn-primary" style="padding: 3px 8px; font-size: 11px; background: #0f9d58; border-color: #0f9d58;">
+                ✓ Approve
+              </button>
+            </form>
+            {% else %}
+            <span class="muted" style="font-size: 11px;">Processed</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+</div>
+
+<!-- Recent Audit Log Entries for this Merchant -->
+<div class="card">
+  <div class="card-head">
+    <h3>Recent Audit Activity for this Merchant</h3>
+  </div>
+  {% if not audit_logs %}
+    <div style="padding: 24px; text-align: center;" class="muted">No recorded administrative operations for this merchant yet.</div>
+  {% else %}
+    <table class="grid">
+      <thead>
+        <tr>
+          <th>Timestamp (UTC)</th>
+          <th>Operator</th>
+          <th>Action</th>
+          <th>Details</th>
+          <th>Outcome</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for a in audit_logs %}
+        <tr>
+          <td class="muted" style="font-size: 11.5px;">{{ a.timestamp.strftime('%Y-%m-%d %H:%M:%S') if a.timestamp else '—' }}</td>
+          <td style="font-size: 12px;"><strong>{{ a.admin_user or 'system' }}</strong></td>
+          <td><span class="badge badge-pill" style="font-size: 11px;">{{ a.action }}</span></td>
+          <td style="font-size: 11px;">{{ a.details }}</td>
+          <td><span class="badge badge-good">{{ a.outcome }}</span></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+</div>
+{% endblock %}

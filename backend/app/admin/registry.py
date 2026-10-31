@@ -67,6 +67,9 @@ LABEL_OVERRIDES = {
     "action_type": "Action Type",
     "action_ref": "Action Ref",
     "event_type": "Event Type",
+    "subscription_status": "Subscription Status",
+    "subscription_start_date": "Subscription Starts At",
+    "subscription_expires_at": "Subscription Expires At",
 }
 
 
@@ -266,11 +269,37 @@ for _cfg in MODEL_CONFIGS:
     REGISTRY_BY_TABLE[_meta.model.__tablename__] = _meta
     NAV_GROUPS.setdefault(_meta.group, []).append(_meta)
 
+# Auto-register remaining schema models so every database table is navigable
+from app.core.database import Base
+_configured = {cfg["model"] for cfg in MODEL_CONFIGS}
+for _mapper in getattr(Base.registry, "mappers", ()):
+    _cls = _mapper.class_
+    _tbl = getattr(_cls, "__tablename__", None)
+    if _cls not in _configured and _tbl:
+        _meta = build_model_meta({
+            "key": _tbl,
+            "model": _cls,
+            "label": humanise(_tbl),
+            "singular": humanise(_tbl).rstrip("s"),
+            "group": "System & Logs",
+        })
+        REGISTRY[_meta.key] = _meta
+        REGISTRY_BY_TABLE[_tbl] = _meta
+        NAV_GROUPS.setdefault(_meta.group, []).append(_meta)
+
 ALL_MODELS: List[ModelMeta] = list(REGISTRY.values())
+
+ALIASES: Dict[str, str] = {
+    "coupons": "coupon_templates",
+    "staff": "merchant_staff",
+    "tokens": "device_tokens",
+    "drafts": "merchant_onboarding_drafts",
+    "bookmarks": "reel_bookmarks",
+}
 
 
 def get_meta(key: str) -> Optional[ModelMeta]:
-    return REGISTRY.get(key)
+    return REGISTRY.get(ALIASES.get(key, key))
 
 
 def nav_groups() -> List[Dict[str, Any]]:

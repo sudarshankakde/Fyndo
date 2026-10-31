@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Optional
 from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text
@@ -43,6 +43,28 @@ class KycStatus(str, Enum):
     REJECTED = "REJECTED"
 
 
+class SubscriptionStatus(str, Enum):
+    ACTIVE = "ACTIVE"
+    INACTIVE = "INACTIVE"
+    EXPIRED = "EXPIRED"
+
+
+def as_aware(value: Optional[datetime]) -> Optional[datetime]:
+    """Ensures a datetime is timezone-aware. Naive datetimes (e.g. from SQLite)
+    are treated as UTC. Aware datetimes are preserved as-is.
+    """
+    if value is None:
+        return None
+    if isinstance(value, str):
+        try:
+            value = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except Exception:
+            return None
+    if value.tzinfo is not None:
+        return value
+    return value.replace(tzinfo=timezone.utc)
+
+
 class Merchant(Base):
     __tablename__ = "merchants"
 
@@ -83,6 +105,26 @@ class Merchant(Base):
     business_hours: Mapped[str] = mapped_column(String(100), nullable=True)
     sub_categories: Mapped[str] = mapped_column(Text, nullable=True)
     call_clicks_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+    # Subscription lifecycle
+    subscription_status: Mapped[SubscriptionStatus] = mapped_column(
+        String(20),
+        default=SubscriptionStatus.ACTIVE,
+        nullable=False,
+        index=True
+    )
+    subscription_start_date: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=True
+    )
+    subscription_expires_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        default=None,
+        nullable=True,
+        index=True
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
@@ -94,6 +136,33 @@ class Merchant(Base):
         onupdate=lambda: datetime.now(timezone.utc),
         nullable=False
     )
+
+    @property
+    def effective_subscription_status(self) -> str:
+        """Dynamically computes the effective subscription status.
+
+        If subscription_status is ACTIVE but the expiration timestamp has
+        surpassed the current time, dynamically evaluates to EXPIRED.
+        Otherwise returns the raw subscription status string (e.g. INACTIVE, EXPIRED, ACTIVE).
+        """
+        raw_status = getattr(self, "subscription_status", None) or SubscriptionStatus.ACTIVE
+        status_str = raw_status.value if hasattr(raw_status, "value") else str(raw_status).upper()
+
+        if status_str != SubscriptionStatus.ACTIVE.value:
+            return status_str
+
+        if self.subscription_expires_at is not None:
+            normalized_exp = as_aware(self.subscription_expires_at)
+            now = datetime.now(timezone.utc)
+            if normalized_exp and now >= normalized_exp:
+                return SubscriptionStatus.EXPIRED.value
+
+        return SubscriptionStatus.ACTIVE.value
+
+    @property
+    def is_subscription_active(self) -> bool:
+        """Returns True if the merchant has an active subscription within the validity window."""
+        return self.effective_subscription_status == SubscriptionStatus.ACTIVE.value
 
     # Relationships
     owner = relationship("User", back_populates="merchant")

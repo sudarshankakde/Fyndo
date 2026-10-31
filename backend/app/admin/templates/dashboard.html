@@ -1,9 +1,66 @@
 {% extends "base.html" %}
 {% block title %}Dashboard · {{ panel_name }}{% endblock %}
 {% block heading %}Dashboard{% endblock %}
-{% block crumbs %}Live database overview & system telemetry{% endblock %}
+{% block crumbs %}Super Admin Command Center & Live Operations{% endblock %}
 
 {% block content %}
+<!-- Quick Action Buttons Strip -->
+<div class="card" style="margin-bottom: 20px; padding: 14px 20px;">
+  <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+    <span style="font-size: 13px; font-weight: 600; color: var(--text);">🚀 Quick Operations:</span>
+    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+      <a href="/admin/kyc" class="btn btn-primary" style="padding: 6px 12px; font-size: 12px; background: #0f9d58; border-color: #0f9d58;">
+        🛡 KYC Queue ({{ kyc_queue_count }})
+      </a>
+      <a href="/admin/moderation" class="btn btn-primary" style="padding: 6px 12px; font-size: 12px; background: #f59e0b; border-color: #f59e0b;">
+        🎬 Pending Reels ({{ pending_reels_count }})
+      </a>
+      <a href="/admin/subscriptions" class="btn btn-ghost" style="border: 1px solid var(--line); padding: 6px 12px; font-size: 12px;">
+        💳 Subscriptions
+      </a>
+      <a href="/admin/merchants" class="btn btn-ghost" style="border: 1px solid var(--line); padding: 6px 12px; font-size: 12px;">
+        🏪 Merchants
+      </a>
+      <a href="/admin/users" class="btn btn-ghost" style="border: 1px solid var(--line); padding: 6px 12px; font-size: 12px;">
+        👥 Users
+      </a>
+      <a href="/admin/broadcast" class="btn btn-ghost" style="border: 1px solid var(--line); padding: 6px 12px; font-size: 12px;">
+        📢 Broadcast
+      </a>
+      <a href="/admin/settings" class="btn btn-ghost" style="border: 1px solid var(--line); padding: 6px 12px; font-size: 12px;">
+        ⚙️ Settings
+      </a>
+      <a href="/admin/analytics" class="btn btn-ghost" style="border: 1px solid var(--line); padding: 6px 12px; font-size: 12px;">
+        📊 Analytics
+      </a>
+    </div>
+  </div>
+</div>
+
+<!-- Merchant Subscription Health Cards -->
+<div class="stat-grid" style="margin-bottom: 20px;">
+  <a class="stat tone-good" href="/admin/subscriptions?filter=ACTIVE">
+    <div class="stat-label">Active Subscriptions</div>
+    <div class="stat-value">{{ active_sub_count }}</div>
+    <div class="stat-hint" style="font-size: 11px; margin-top: 4px; color: var(--good);">Live stores with active access</div>
+  </a>
+  <a class="stat tone-danger" href="/admin/subscriptions?filter=EXPIRED">
+    <div class="stat-label">Expired Subscriptions</div>
+    <div class="stat-value">{{ expired_sub_count }}</div>
+    <div class="stat-hint" style="font-size: 11px; margin-top: 4px; color: var(--danger);">Needs renewal or extension</div>
+  </a>
+  <a class="stat tone-neutral" href="/admin/subscriptions?filter=INACTIVE">
+    <div class="stat-label">Suspended / Inactive</div>
+    <div class="stat-value">{{ inactive_sub_count }}</div>
+    <div class="stat-hint" style="font-size: 11px; margin-top: 4px; color: var(--muted);">Manually deactivated stores</div>
+  </a>
+  <a class="stat tone-warn" href="/admin/merchants?sub_filter=TRIAL">
+    <div class="stat-label">Trial Enrolled Stores</div>
+    <div class="stat-value">{{ trial_sub_count }}</div>
+    <div class="stat-hint" style="font-size: 11px; margin-top: 4px; color: var(--warn);">Enrolled in trial policy</div>
+  </a>
+</div>
+
 <!-- Live System Health Strip -->
 <div class="card" style="margin-bottom: 20px; border-left: 4px solid {% if database.status == 'connected' and redis.status == 'connected' %}#10b981{% else %}#f59e0b{% endif %};">
   <div class="card-head" style="padding-bottom: 8px;">
@@ -18,26 +75,17 @@
   </div>
   <div class="card-body" style="padding-top: 4px;">
     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; font-size: 0.85rem;">
-      <div>
-        <span class="muted">Uptime:</span> <strong>{{ system.uptime_human }}</strong>
-      </div>
-      <div>
-        <span class="muted">Host CPU:</span> <strong>{{ system.cpu_percent }}%</strong> ({{ system.cpu_count }} cores)
-      </div>
-      <div>
-        <span class="muted">Memory:</span> <strong>{{ system.memory.used_mb }} MB</strong> ({{ system.memory.percent }}%)
-      </div>
-      <div>
-        <span class="muted">Redis Cache:</span> <strong style="color: {% if redis.status == 'connected' %}#10b981{% else %}#f59e0b{% endif %};">{{ redis.status|upper }}</strong> ({{ redis.mode }})
-      </div>
-      <div>
-        <span class="muted">Database:</span> <strong style="color: #10b981;">{{ database.status|upper }}</strong> ({{ database.dialect|upper }})
-      </div>
+      <div><span class="muted">Uptime:</span> <strong>{{ system.uptime_human }}</strong></div>
+      <div><span class="muted">Host CPU:</span> <strong>{{ system.cpu_percent }}%</strong> ({{ system.cpu_count }} cores)</div>
+      <div><span class="muted">Memory:</span> <strong>{{ system.memory.used_mb }} MB</strong> ({{ system.memory.percent }}%)</div>
+      <div><span class="muted">Redis:</span> <strong style="color: {% if redis.status == 'connected' %}#10b981{% else %}#f59e0b{% endif %};">{{ redis.status|upper }}</strong></div>
+      <div><span class="muted">Database:</span> <strong style="color: #10b981;">{{ database.status|upper }}</strong> ({{ database.dialect|upper }})</div>
     </div>
   </div>
 </div>
 
-<div class="stat-grid">
+<!-- Highlight Operational Queues -->
+<div class="stat-grid" style="margin-bottom: 20px;">
   {% for item in highlights %}
   <a class="stat {{ item.tone }}" href="{{ item.href }}">
     <div class="stat-label">{{ item.label }}</div>
@@ -46,36 +94,83 @@
   {% endfor %}
 </div>
 
-<form class="card" method="post" action="/admin/settings/auto-approve">
-  <div class="card-head">
-    <h2>Reel publishing</h2>
-    <span class="muted">{{ 'New reels go live instantly' if auto_approve_reels else 'New reels wait for your review' }}</span>
+<!-- Recent Audit Logs Table (Last 10) -->
+<div class="card" style="margin-bottom: 24px;">
+  <div class="card-head" style="display: flex; justify-content: space-between; align-items: center;">
+    <div>
+      <h2 style="margin: 0; font-size: 1rem;">Recent Audit Operations</h2>
+      <span class="muted" style="font-size: 12px;">Last 10 administrative operations across the platform</span>
+    </div>
+    <a href="/admin/audit" class="muted" style="font-size: 12px; font-weight: 600; color: #0284c7;">Full Audit Trail &rarr;</a>
   </div>
-  <div class="card-body">
-    <label class="check-row">
-      <input type="checkbox" name="enabled" {% if auto_approve_reels %}checked{% endif %}
-             onchange="this.form.submit()">
-      <span><strong>Auto-approve reels</strong> &mdash; publish merchant reels without manual moderation</span>
-    </label>
-    <noscript><button class="btn btn-primary" type="submit">Save</button></noscript>
-  </div>
-</form>
+  {% if not recent_audits %}
+    <div style="padding: 24px; text-align: center;" class="muted">No recent administrative operations recorded.</div>
+  {% else %}
+    <table class="grid">
+      <thead>
+        <tr>
+          <th>Timestamp (UTC)</th>
+          <th>Operator</th>
+          <th>Action</th>
+          <th>Target</th>
+          <th>Target ID</th>
+          <th>Outcome</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for a in recent_audits %}
+        <tr>
+          <td class="muted" style="font-size: 11.5px; white-space: nowrap;">
+            {{ a.timestamp.strftime('%Y-%m-%d %H:%M:%S') if a.timestamp else '—' }}
+          </td>
+          <td><strong style="font-size: 12px;">{{ a.admin_user or 'system' }}</strong></td>
+          <td><span class="badge badge-pill" style="font-size: 11px;">{{ a.action }}</span></td>
+          <td class="muted" style="font-size: 12px;">{{ a.target_type or '—' }}</td>
+          <td><code style="font-size: 11px;">{{ a.target_id or '—' }}</code></td>
+          <td>
+            {% if a.outcome == 'success' %}
+              <span class="badge badge-good">Success</span>
+            {% else %}
+              <span class="badge badge-danger">{{ a.outcome }}</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+</div>
 
-<form class="card" method="post" action="/admin/settings/auto-approve-kyc">
-  <div class="card-head">
-    <h2>Merchant KYC Verification</h2>
-    <span class="muted">{{ 'New merchant stores are verified instantly' if auto_approve_kyc else 'New merchant stores wait for KYC document verification' }}</span>
-  </div>
-  <div class="card-body">
-    <label class="check-row">
-      <input type="checkbox" name="enabled" {% if auto_approve_kyc %}checked{% endif %}
-             onchange="this.form.submit()">
-      <span><strong>Auto-approve KYC</strong> &mdash; automatically verify merchant store registrations upon onboarding</span>
-    </label>
-    <noscript><button class="btn btn-primary" type="submit">Save</button></noscript>
-  </div>
-</form>
+<!-- Settings Fast Switches -->
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; margin-bottom: 24px;">
+  <form class="card" method="post" action="/admin/settings/auto-approve">
+    <div class="card-head">
+      <h2 style="font-size: 0.95rem;">🎬 Reel Publishing</h2>
+      <span class="muted" style="font-size: 11px;">{{ 'Live instantly' if auto_approve_reels else 'Manual review' }}</span>
+    </div>
+    <div class="card-body">
+      <label class="check-row">
+        <input type="checkbox" name="enabled" {% if auto_approve_reels %}checked{% endif %} onchange="this.form.submit()">
+        <span><strong>Auto-approve reels</strong> without moderation</span>
+      </label>
+    </div>
+  </form>
 
+  <form class="card" method="post" action="/admin/settings/auto-approve-kyc">
+    <div class="card-head">
+      <h2 style="font-size: 0.95rem;">🛡 Store KYC</h2>
+      <span class="muted" style="font-size: 11px;">{{ 'Verified instantly' if auto_approve_kyc else 'Manual review' }}</span>
+    </div>
+    <div class="card-body">
+      <label class="check-row">
+        <input type="checkbox" name="enabled" {% if auto_approve_kyc %}checked{% endif %} onchange="this.form.submit()">
+        <span><strong>Auto-approve KYC</strong> on submission</span>
+      </label>
+    </div>
+  </form>
+</div>
+
+<!-- Database Table Tiles -->
 <div class="card">
   <div class="card-head">
     <h2>Database Tables</h2>

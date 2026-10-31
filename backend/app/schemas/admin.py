@@ -1,7 +1,8 @@
 import uuid
 from datetime import datetime
 from typing import Any, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
+from app.models.merchant import SubscriptionStatus
 
 
 class ModerationDecisionRequest(BaseModel):
@@ -56,6 +57,52 @@ class AdminMerchantDetail(BaseModel):
     staff_phone: Optional[str] = None
     reels_count: int = 0
     created_at: datetime
+    subscription_status: str = "ACTIVE"
+    subscription_start_date: Optional[datetime] = None
+    subscription_expires_at: Optional[datetime] = None
+    is_subscription_active: bool = True
+    effective_subscription_status: Optional[str] = None
+
+
+class AdminMerchantSubscriptionUpdateRequest(BaseModel):
+    subscription_status: Optional[SubscriptionStatus] = None
+    subscription_expires_at: Optional[datetime] = None
+
+    @field_validator("subscription_status", mode="before")
+    @classmethod
+    def normalize_status(cls, v: Any) -> Any:
+        if isinstance(v, str):
+            v_upper = v.strip().upper()
+            if v_upper in SubscriptionStatus.__members__:
+                return SubscriptionStatus[v_upper]
+        return v
+
+    @model_validator(mode="after")
+    def check_at_least_one_field(self) -> "AdminMerchantSubscriptionUpdateRequest":
+        if self.subscription_status is None and self.subscription_expires_at is None:
+            raise ValueError("At least one of subscription_status or subscription_expires_at must be provided.")
+        return self
+
+
+class AdminMerchantSubscriptionExtendRequest(BaseModel):
+    duration_days: Optional[int] = Field(None, ge=0)
+    months: Optional[int] = Field(None, ge=0)
+
+
+class AdminMerchantSubscriptionResponse(BaseModel):
+    merchant_id: uuid.UUID
+    id: Optional[uuid.UUID] = None
+    subscription_status: str
+    subscription_start_date: Optional[datetime] = None
+    subscription_expires_at: Optional[datetime] = None
+    is_subscription_active: bool = True
+    effective_subscription_status: Optional[str] = None
+
+    @model_validator(mode="after")
+    def sync_id(self) -> "AdminMerchantSubscriptionResponse":
+        if self.id is None:
+            self.id = self.merchant_id
+        return self
 
 
 class AdminMerchantCreateRequest(BaseModel):
@@ -121,3 +168,5 @@ class SystemSettingOut(BaseModel):
 class SystemSettingsUpdateRequest(BaseModel):
     auto_approve_reels: Optional[bool] = None
     auto_approve_kyc: Optional[bool] = None
+    auto_trial_enabled: Optional[bool] = None
+    auto_trial_duration_days: Optional[int] = Field(None, ge=1, le=3650, description="Default trial duration in days")

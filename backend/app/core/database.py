@@ -62,6 +62,8 @@ _PERFORMANCE_INDEXES = (
     "CREATE INDEX IF NOT EXISTS ix_request_audit_logs_time ON request_audit_logs (timestamp)",
     "CREATE INDEX IF NOT EXISTS ix_request_audit_logs_status_time ON request_audit_logs (status_code, timestamp)",
     "CREATE INDEX IF NOT EXISTS ix_request_audit_logs_path_time ON request_audit_logs (path, timestamp)",
+    "CREATE INDEX IF NOT EXISTS ix_merchants_subscription_status ON merchants (subscription_status)",
+    "CREATE INDEX IF NOT EXISTS ix_merchants_subscription_expires_at ON merchants (subscription_expires_at)",
 )
 
 
@@ -101,6 +103,9 @@ _COMPAT_COLUMNS = {
         "business_hours": ("VARCHAR(100) NULL", "VARCHAR(100) NULL"),
         "call_clicks_count": ("INTEGER NOT NULL DEFAULT 0", "INTEGER NOT NULL DEFAULT 0"),
         "sub_categories": ("TEXT NULL", "TEXT NULL"),
+        "subscription_status": ("VARCHAR(20) NOT NULL DEFAULT 'ACTIVE'", "VARCHAR(20) NOT NULL DEFAULT 'ACTIVE'"),
+        "subscription_start_date": ("DATETIME NULL", "TIMESTAMPTZ NULL"),
+        "subscription_expires_at": ("DATETIME NULL", "TIMESTAMPTZ NULL"),
     },
     "merchant_staff": {
         "can_upload_reels": ("BOOLEAN NOT NULL DEFAULT 0", "BOOLEAN NOT NULL DEFAULT FALSE"),
@@ -128,6 +133,7 @@ async def ensure_compatibility_schema() -> None:
     if _compatibility_schema_ready:
         return
 
+    import app.models  # noqa: F401 - ensure all declarative models are registered on Base
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         dialect = conn.dialect.name
@@ -144,12 +150,30 @@ async def ensure_compatibility_schema() -> None:
                         await conn.execute(
                             text(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
                         )
+            # Backfill existing merchants without subscription expiry so existing data is preserved
+            await conn.execute(
+                text(
+                    "UPDATE merchants SET "
+                    "subscription_start_date = COALESCE(subscription_start_date, created_at, CURRENT_TIMESTAMP), "
+                    "subscription_expires_at = COALESCE(subscription_expires_at, datetime('now', '+90 days')) "
+                    "WHERE subscription_expires_at IS NULL"
+                )
+            )
         elif dialect == "postgresql":
             for table, columns in _COMPAT_COLUMNS.items():
                 for column, (_, definition) in columns.items():
                     await conn.execute(
                         text(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {definition}")
                     )
+            # Backfill existing merchants without subscription expiry so existing data is preserved
+            await conn.execute(
+                text(
+                    "UPDATE merchants SET "
+                    "subscription_start_date = COALESCE(subscription_start_date, created_at, NOW()), "
+                    "subscription_expires_at = COALESCE(subscription_expires_at, NOW() + INTERVAL '90 days') "
+                    "WHERE subscription_expires_at IS NULL"
+                )
+            )
         for statement in _PERFORMANCE_INDEXES:
             await conn.execute(text(statement))
     _compatibility_schema_ready = True

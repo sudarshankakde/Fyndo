@@ -4,6 +4,94 @@
 {% block crumbs %}{{ meta.group }} · {{ meta.label }}{% endblock %}
 
 {% block content %}
+{% if meta.key == 'merchants' and row %}
+<!-- Merchant Subscription & Store Operations Control Console -->
+<div class="card" style="margin-bottom: 20px; border-top: 4px solid {% if row.is_subscription_active %}#10b981{% else %}#ef4444{% endif %};">
+  <div class="card-head">
+    <div>
+      <h2 style="margin: 0; display: flex; align-items: center; gap: 10px;">
+        Subscription & Trial Management
+        <span class="badge {% if row.is_subscription_active %}badge-good{% elif row.subscription_status.value == 'EXPIRED' or (row.subscription_expires_at and row.subscription_expires_at < row.subscription_start_date) %}badge-danger{% else %}badge-muted{% endif %}">
+          {{ row.effective_subscription_status.value if row.effective_subscription_status else (row.subscription_status.value if row.subscription_status else 'NONE') }}
+        </span>
+      </h2>
+      <div class="muted" style="margin-top: 4px; font-size: 0.85rem;">
+        {% if row.is_subscription_active %}
+          <span style="color: #10b981; font-weight: 600;">&#10003; Content Uploads Allowed</span> &mdash;
+          Expires: <strong>{{ row.subscription_expires_at.strftime('%b %d, %Y (%H:%M UTC)') if row.subscription_expires_at else 'No Expiry Set' }}</strong>
+        {% else %}
+          <span style="color: #ef4444; font-weight: 600;">&#10007; Content Uploads Blocked (HTTP 403)</span> &mdash;
+          {% if row.subscription_expires_at %}
+            Expired on: <strong>{{ row.subscription_expires_at.strftime('%b %d, %Y') }}</strong>
+          {% else %}
+            No active subscription or free trial assigned.
+          {% endif %}
+        {% endif %}
+      </div>
+    </div>
+    <div>
+      {% if not row.is_subscription_active %}
+      <form method="post" action="/admin/merchants/{{ row_pk }}/subscription/activate" style="display: inline-block;">
+        <input type="hidden" name="duration_days" value="90">
+        <button class="btn btn-primary" type="submit">&#9654; Approve &amp; Activate Trial (90 Days)</button>
+      </form>
+      {% else %}
+      <form method="post" action="/admin/merchants/{{ row_pk }}/subscription/deactivate" style="display: inline-block;"
+            onsubmit="return confirm('Suspend subscription? The merchant will be immediately blocked from uploading reels.');">
+        <button class="btn btn-danger" type="submit">&#9208; Suspend Subscription</button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="card-body" style="background: #fafbfc; border-top: 1px solid var(--line, #e2e8f0); padding: 16px;">
+    <!-- Extend Trial Duration -->
+    <div style="margin-bottom: 16px;">
+      <h3 style="font-size: 0.9rem; margin-bottom: 8px;">Extend Trial / Subscription Duration</h3>
+      <form method="post" action="/admin/merchants/{{ row_pk }}/subscription/extend" style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center;">
+        <span class="muted" style="font-size: 0.85rem;">Quick Add:</span>
+        <button class="btn" type="submit" name="duration_days" value="30">+30 Days (1 Mo)</button>
+        <button class="btn" type="submit" name="duration_days" value="60">+60 Days (2 Mos)</button>
+        <button class="btn btn-primary" type="submit" name="duration_days" value="90">+90 Days (3 Mos)</button>
+        <button class="btn" type="submit" name="duration_days" value="180">+180 Days (6 Mos)</button>
+        <button class="btn" type="submit" name="duration_days" value="365">+365 Days (1 Yr)</button>
+
+        <div style="display: inline-flex; align-items: center; gap: 6px; margin-left: auto;">
+          <label style="font-size: 0.85rem;" class="muted">Custom Days:</label>
+          <input type="number" name="duration_days" placeholder="Days" min="1" max="3650" style="width: 80px; padding: 5px 8px; border: 1px solid #cbd5e1; border-radius: 4px;">
+          <button class="btn" type="submit">Extend</button>
+        </div>
+      </form>
+    </div>
+
+    <!-- Set Custom Expiration Date -->
+    <div style="border-top: 1px dashed var(--line, #e2e8f0); padding-top: 14px; display: flex; flex-wrap: wrap; gap: 20px; align-items: center;">
+      <form method="post" action="/admin/merchants/{{ row_pk }}/subscription/set-expiry" style="display: flex; gap: 8px; align-items: center;">
+        <label style="font-size: 0.85rem; font-weight: 600;">Set Exact Expiration Date:</label>
+        <input type="date" name="expiry_date" required style="padding: 5px 8px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 0.85rem;">
+        <button class="btn" type="submit">Update Expiry</button>
+      </form>
+
+      <!-- KYC Quick Actions -->
+      <div style="margin-left: auto; display: flex; gap: 8px; align-items: center;">
+        <span class="muted" style="font-size: 0.85rem;">KYC Status:</span>
+        <span class="badge {% if row.kyc_status.value == 'APPROVED' %}badge-good{% elif row.kyc_status.value == 'PENDING' %}badge-warn{% else %}badge-danger{% endif %}">
+          {{ row.kyc_status.value }}
+        </span>
+        {% if row.kyc_doc_url %}
+        <a class="btn" href="{{ row.kyc_doc_url }}" target="_blank" rel="noopener" style="font-size: 0.8rem;">&#128196; View Doc</a>
+        {% endif %}
+        {% if row.kyc_status.value != 'APPROVED' %}
+        <form method="post" action="/admin/merchants/{{ row_pk }}/kyc/approve" style="display: inline-block;">
+          <button class="btn btn-primary" type="submit" style="background: #10b981;">Approve KYC</button>
+        </form>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
 <div class="card">
   <div class="card-head">
     <div>

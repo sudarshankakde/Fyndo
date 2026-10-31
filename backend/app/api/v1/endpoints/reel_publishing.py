@@ -1,6 +1,6 @@
-"""Reel publishing (owner or permitted cashier) and offer-validity management."""
 import uuid
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -14,29 +14,22 @@ from app.core.audit import audit_log
 from app.core.config import settings
 from app.core.database import get_db
 from app.models.coupon import CouponTemplate, DiscountType
-from app.models.merchant import KycStatus, Merchant, MerchantStaff, Sector
+from app.models.merchant import KycStatus, Merchant, MerchantStaff, Sector, SubscriptionStatus
 from app.models.reel import AudioType, Reel, ReelStatus
 from app.models.user import User
 from app.schemas.common import ResponseEnvelope
 from app.schemas.reel import (
-    CouponFeedSummary,
-    ReelCreateRequest,
-    ReelExtendRequest,
-    ReelExtendResponse,
-    ReelManagementOut,
+    CouponFeedSummary, ReelCreateRequest, ReelExtendRequest, ReelExtendResponse, ReelManagementOut
 )
 from app.services.cloudinary_service import CloudinaryService
 from app.services.merchant_engagement_service import coupon_counts_for_templates
 from app.services.reel_lifecycle_service import (
-    OfferExtensionError,
-    extend_offer,
-    max_validity_days,
-    start_offer_clock,
-    utcnow,
+    OfferExtensionError, extend_offer, max_validity_days, start_offer_clock, utcnow
 )
 from app.services.moderation_alerts import notify_reel_decision
 from app.services.reel_feed_service import invalidate_feed_cache
 from app.services.settings_service import is_auto_approve_enabled
+from app.services.subscription_service import ensure_active_subscription
 
 router = APIRouter()
 
@@ -57,6 +50,7 @@ async def _merchant_for(db: AsyncSession, user: User) -> Optional[Merchant]:
     result = await db.execute(select(Merchant).where(Merchant.user_id == user.id))
     merchant = result.scalars().first()
     if not merchant and settings.ENVIRONMENT == "development":
+        now = datetime.now(timezone.utc)
         merchant = Merchant(
             user_id=user.id,
             business_name=user.full_name or "My Store",
@@ -66,8 +60,17 @@ async def _merchant_for(db: AsyncSession, user: User) -> Optional[Merchant]:
             kyc_status=KycStatus.APPROVED,
             latitude=12.9352,
             longitude=77.6245,
+            subscription_status=SubscriptionStatus.ACTIVE,
+            subscription_start_date=now,
+            subscription_expires_at=now + timedelta(days=90),
         )
         db.add(merchant)
+        await db.flush()
+    elif merchant and settings.ENVIRONMENT == "development" and merchant.subscription_status is None:
+        now = datetime.now(timezone.utc)
+        merchant.subscription_status = SubscriptionStatus.ACTIVE
+        merchant.subscription_start_date = now
+        merchant.subscription_expires_at = now + timedelta(days=90)
         await db.flush()
     return merchant
 
@@ -115,6 +118,7 @@ async def create_reel(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Your merchant KYC must be approved before publishing reels.",
         )
+    ensure_active_subscription(merchant)
 
     thumbnail_url = request.thumbnail_url or settings.DEFAULT_REEL_THUMBNAIL_URL
     if not thumbnail_url and request.video_url:
@@ -212,6 +216,7 @@ async def extend_reel_validity(
     if ctx.is_staff and not ctx.can_manage_content:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Permission 'Manage Content' required.")
     merchant = ctx.merchant
+    ensure_active_subscription(merchant)
     reel = (
         await db.execute(
             select(Reel)

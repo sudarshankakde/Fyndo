@@ -1,0 +1,65 @@
+<div class="card-head">
+  <span class="muted">{{ total_users }} record{{ '' if total_users == 1 else 's' }}</span>
+  <span class="muted">50 per page</span>
+</div>
+<table class="grid">
+  <thead>
+    <tr>
+      <th>Phone</th>
+      <th>Full Name</th>
+      <th>Role</th>
+      <th>Status</th>
+      <th>Joined Date</th>
+      <th style="text-align: right;">Access Action</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for u in users %}
+    {% set role_val = u.role.value if u.role and u.role.value is defined else (u.role | string) %}
+    <tr>
+      <td class="cell-lead">
+        <strong style="font-family: monospace;">{{ u.phone }}</strong>
+      </td>
+      <td>{{ u.full_name or '—' }}</td>
+      <td>
+        {% if role_val == 'SUPER_ADMIN' %}
+          <span class="badge badge-pill">Super Admin</span>
+        {% elif role_val == 'MERCHANT' %}
+          <span class="badge badge-good">Merchant</span>
+        {% else %}
+          <span class="badge badge-muted">Shopper</span>
+        {% endif %}
+      </td>
+      <td>
+        {% if u.is_active %}
+          <span class="badge badge-good">Active</span>
+        {% else %}
+          <span class="badge badge-danger">Banned / Inactive</span>
+        {% endif %}
+      </td>
+      <td class="muted" style="font-size: 12px;">
+        {{ u.created_at.strftime('%Y-%m-%d %H:%M') if u.created_at else '—' }}
+      </td>
+      <td style="text-align: right;">
+        {% if role_val != 'SUPER_ADMIN' %}
+          {% if u.is_active %}
+          <form method="post" action="/admin/users/{{ u.id }}/ban" style="display: inline;">
+            <button type="submit" class="btn btn-danger" style="padding: 4px 10px; font-size: 11.5px;">
+              🚫 Ban User
+            </button>
+          </form>
+          {% else %}
+          <form method="post" action="/admin/users/{{ u.id }}/unban" style="display: inline;">
+            <button type="submit" class="btn btn-primary" style="background: #0f9d58; border-color: #0f9d58; padding: 4px 10px; font-size: 11.5px;">
+              ✓ Restore Access
+            </button>
+          </form>
+          {% endif %}
+        {% else %}
+          <span class="muted" style="font-size: 11px;">Protected</span>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>

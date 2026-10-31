@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+{% block title %}Platform Settings · {{ panel_name }}{% endblock %}
+{% block heading %}Platform Settings{% endblock %}
+{% block crumbs %}Global switches, auto-approval pipelines, and maintenance controls{% endblock %}
+
+{% block content %}
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 20px;">
+
+  <!-- Auto-Trial Settings Card -->
+  <div class="card">
+    <div class="card-head">
+      <h3>🎁 Merchant Auto-Trial</h3>
+    </div>
+    <div class="card-body">
+      <p class="muted" style="font-size: 13px; margin-bottom: 16px;">
+        Automatically grant a free trial when a new merchant completes registration & onboarding.
+      </p>
+      <form method="post" action="/admin/settings/auto-trial" class="form-grid">
+        <label class="check-row" style="margin-bottom: 12px;">
+          <input type="checkbox" name="enabled" {% if auto_trial_enabled %}checked{% endif %}>
+          <span>Enable Auto-Trial for New Merchants</span>
+        </label>
+        <div class="field" style="margin-bottom: 14px;">
+          <label style="font-size: 12px; font-weight: 600; display: block; margin-bottom: 4px;">Trial Duration (Days)</label>
+          <input type="number" name="duration_days" value="{{ auto_trial_duration_days }}" min="1" max="3650" class="input" style="width: 100%;">
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary">Save Trial Settings</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Auto-Reel Moderation Card -->
+  <div class="card">
+    <div class="card-head">
+      <h3>🎬 Auto-Reel Moderation</h3>
+    </div>
+    <div class="card-body">
+      <p class="muted" style="font-size: 13px; margin-bottom: 16px;">
+        Publish uploaded reels immediately without awaiting human operator review.
+      </p>
+      <form method="post" action="/admin/settings/auto-approve">
+        <label class="check-row" style="margin-bottom: 16px;">
+          <input type="checkbox" name="enabled" {% if auto_approve_reels %}checked{% endif %} onchange="this.form.submit()">
+          <span>Instant Video Reel Approval</span>
+        </label>
+        <div style="font-size: 12px; color: {% if auto_approve_reels %}var(--good){% else %}var(--warn){% endif %}; font-weight: 600;">
+          Status: {% if auto_approve_reels %}ACTIVE (Reels bypass moderation){% else %}DISABLED (Moderation queue active){% endif %}
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Auto-KYC Verification Card -->
+  <div class="card">
+    <div class="card-head">
+      <h3>🛡 Auto-KYC Approval</h3>
+    </div>
+    <div class="card-body">
+      <p class="muted" style="font-size: 13px; margin-bottom: 16px;">
+        Automatically verify store KYC documents upon merchant submission.
+      </p>
+      <form method="post" action="/admin/settings/auto-approve-kyc">
+        <label class="check-row" style="margin-bottom: 16px;">
+          <input type="checkbox" name="enabled" {% if auto_approve_kyc %}checked{% endif %} onchange="this.form.submit()">
+          <span>Auto-Approve Store KYC</span>
+        </label>
+        <div style="font-size: 12px; color: {% if auto_approve_kyc %}var(--good){% else %}var(--warn){% endif %}; font-weight: 600;">
+          Status: {% if auto_approve_kyc %}ACTIVE (Auto-verified){% else %}DISABLED (Manual review required){% endif %}
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Platform Maintenance Mode Card -->
+  <div class="card">
+    <div class="card-head">
+      <h3>🚧 Platform Maintenance Mode</h3>
+    </div>
+    <div class="card-body">
+      <p class="muted" style="font-size: 13px; margin-bottom: 16px;">
+        When enabled, clients receive a maintenance notice and destructive mutations can be suspended.
+      </p>
+      <form method="post" action="/admin/settings/maintenance-mode">
+        <label class="check-row" style="margin-bottom: 16px;">
+          <input type="checkbox" name="enabled" {% if maintenance_mode %}checked{% endif %} onchange="this.form.submit()">
+          <span>Enable Maintenance Mode</span>
+        </label>
+        <div style="font-size: 12px; color: {% if maintenance_mode %}var(--danger){% else %}var(--good){% endif %}; font-weight: 600;">
+          Status: {% if maintenance_mode %}MAINTENANCE ON (Access restricted){% else %}OPERATIONAL (All services live){% endif %}
+        </div>
+      </form>
+    </div>
+  </div>
+
+</div>
+
+<!-- Raw Settings Overview Table -->
+<div class="card" style="margin-top: 24px;">
+  <div class="card-head">
+    <h3>Current Setting Values</h3>
+  </div>
+  <table class="grid">
+    <thead>
+      <tr>
+        <th>Key</th>
+        <th>Value</th>
+        <th>Description</th>
+        <th>Last Updated</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for s in settings_list %}
+      <tr>
+        <td><code>{{ s.key }}</code></td>
+        <td><strong>{{ s.value }}</strong></td>
+        <td class="muted">{{ s.description }}</td>
+        <td class="muted" style="font-size: 11.5px;">{{ s.updated_at or 'Default' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

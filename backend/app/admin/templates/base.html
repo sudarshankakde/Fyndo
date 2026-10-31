@@ -17,9 +17,16 @@
     <nav>
       <div class="nav-group">
         <a class="nav-link {% if current_path in ['/admin', '/admin/'] %}active{% endif %}" href="/admin/">Dashboard</a>
-        <a class="nav-link {% if current_path.startswith('/admin/system') %}active{% endif %}" href="/admin/system">System & Health</a>
+        <a class="nav-link {% if current_path.startswith('/admin/merchants') %}active{% endif %}" href="/admin/merchants">Merchants</a>
+        <a class="nav-link {% if current_path.startswith('/admin/subscriptions') %}active{% endif %}" href="/admin/subscriptions">Subscriptions</a>
+        <a class="nav-link {% if current_path.startswith('/admin/kyc') %}active{% endif %}" href="/admin/kyc">KYC Queue</a>
+        <a class="nav-link {% if current_path.startswith('/admin/users') %}active{% endif %}" href="/admin/users">User Accounts</a>
         <a class="nav-link {% if current_path.startswith('/admin/moderation') %}active{% endif %}" href="/admin/moderation">Reel Moderation</a>
-        <a class="nav-link {% if current_path.startswith('/admin/audit-logs') %}active{% endif %}" href="/admin/audit-logs">Request & DB Logs</a>
+        <a class="nav-link {% if current_path.startswith('/admin/broadcast') %}active{% endif %}" href="/admin/broadcast">Push Broadcast</a>
+        <a class="nav-link {% if current_path.startswith('/admin/settings') %}active{% endif %}" href="/admin/settings">Settings</a>
+        <a class="nav-link {% if current_path.startswith('/admin/audit') %}active{% endif %}" href="/admin/audit">Audit Trail</a>
+        <a class="nav-link {% if current_path.startswith('/admin/analytics') %}active{% endif %}" href="/admin/analytics">Analytics</a>
+        <a class="nav-link {% if current_path.startswith('/admin/system') %}active{% endif %}" href="/admin/system">System & Health</a>
       </div>
       {% for group in nav %}
       <div class="nav-group">

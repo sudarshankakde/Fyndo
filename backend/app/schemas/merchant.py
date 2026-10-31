@@ -2,7 +2,7 @@ import json
 import uuid
 from datetime import datetime
 from typing import List, Optional
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, AliasChoices
 
 
 class MerchantOnboardRequest(BaseModel):
@@ -58,8 +58,27 @@ class MerchantOut(BaseModel):
     phone: Optional[str] = None
     website: Optional[str] = None
     business_hours: Optional[str] = None
-    call_clicks_count: int = 0
+    call_clicks_count: Optional[int] = 0
     created_at: Optional[datetime] = None
+
+    # Subscription fields
+    subscription_status: str = Field(
+        default="ACTIVE",
+        validation_alias=AliasChoices("effective_subscription_status", "subscription_status"),
+        description="Effective subscription status: ACTIVE, INACTIVE, or EXPIRED"
+    )
+    subscription_start_date: Optional[datetime] = Field(
+        default=None,
+        description="UTC timestamp when subscription started"
+    )
+    subscription_expires_at: Optional[datetime] = Field(
+        default=None,
+        description="UTC timestamp when subscription expires"
+    )
+    is_subscription_active: bool = Field(
+        default=False,
+        description="Boolean indicating whether subscription is currently active"
+    )
 
     @field_validator("sub_categories", mode="before")
     @classmethod
@@ -81,7 +100,10 @@ class MerchantOut(BaseModel):
             return [s.strip() for s in v.split(",") if s.strip()]
         return []
 
-    model_config = {"from_attributes": True}
+    model_config = {
+        "from_attributes": True,
+        "populate_by_name": True,
+    }
 
 
 class StaffCreateRequest(BaseModel):

@@ -1,16 +1,20 @@
 import uuid
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from app.core.security import get_password_hash
 from app.models.coupon import CouponTemplate, DiscountType, RedemptionsLedger
-from app.models.merchant import KycStatus, Merchant, MerchantStaff, Sector
+from app.models.merchant import KycStatus, Merchant, MerchantStaff, Sector, SubscriptionStatus, as_aware
 from app.models.reel import AudioType, Reel, ReelStatus
 from app.models.user import User, UserRole
 from app.schemas.admin import (
     AdminMerchantCreateRequest,
     AdminMerchantDetail,
+    AdminMerchantSubscriptionExtendRequest,
+    AdminMerchantSubscriptionResponse,
+    AdminMerchantSubscriptionUpdateRequest,
     AdminMerchantUpdateRequest,
     AdminReelCreateRequest,
     AdminReelListItem,
@@ -44,39 +48,48 @@ class AdminService:
         )
 
     @classmethod
+    def _build_merchant_detail(cls, m: Merchant) -> AdminMerchantDetail:
+        def val(v): return getattr(v, "value", str(v)) if v is not None else ""
+        active_reels = [r for r in m.reels if r.deleted_at is None]
+        return AdminMerchantDetail(
+            id=m.id,
+            business_name=m.business_name,
+            sector=val(m.sector),
+            address_text=m.address_text,
+            city=m.city,
+            latitude=m.latitude,
+            longitude=m.longitude,
+            owner_phone=m.owner.phone if m.owner else "+910000000000",
+            kyc_status=val(m.kyc_status),
+            staff_name=m.staff[0].staff_name if m.staff else None,
+            staff_phone=m.staff[0].phone if m.staff else None,
+            reels_count=len(active_reels),
+            created_at=m.created_at,
+            subscription_status=val(m.subscription_status) or "ACTIVE",
+            subscription_start_date=m.subscription_start_date,
+            subscription_expires_at=m.subscription_expires_at,
+            is_subscription_active=m.is_subscription_active,
+            effective_subscription_status=m.effective_subscription_status,
+        )
+
+    @classmethod
     async def list_merchants(cls, db: AsyncSession) -> List[AdminMerchantDetail]:
         stmt = (
             select(Merchant)
-            .options(
-                selectinload(Merchant.owner),
-                selectinload(Merchant.staff),
-                selectinload(Merchant.reels)
-            )
+            .options(selectinload(Merchant.owner), selectinload(Merchant.staff), selectinload(Merchant.reels))
             .order_by(Merchant.created_at.desc())
         )
-        merchants = (await db.execute(stmt)).scalars().all()
-        result = []
-        for m in merchants:
-            def val(v): return v.value if hasattr(v, "value") else str(v)
-            active_reels = [r for r in m.reels if r.deleted_at is None]
-            result.append(
-                AdminMerchantDetail(
-                    id=m.id,
-                    business_name=m.business_name,
-                    sector=val(m.sector),
-                    address_text=m.address_text,
-                    city=m.city,
-                    latitude=m.latitude,
-                    longitude=m.longitude,
-                    owner_phone=m.owner.phone if m.owner else "+910000000000",
-                    kyc_status=val(m.kyc_status),
-                    staff_name=m.staff[0].staff_name if m.staff else None,
-                    staff_phone=m.staff[0].phone if m.staff else None,
-                    reels_count=len(active_reels),
-                    created_at=m.created_at
-                )
-            )
-        return result
+        return [cls._build_merchant_detail(m) for m in (await db.execute(stmt)).scalars().all()]
+
+    @classmethod
+    async def get_merchant(cls, merchant_id: uuid.UUID, db: AsyncSession) -> Optional[AdminMerchantDetail]:
+        stmt = (
+            select(Merchant)
+            .options(selectinload(Merchant.owner), selectinload(Merchant.staff), selectinload(Merchant.reels))
+            .where(Merchant.id == merchant_id)
+        )
+        m = (await db.execute(stmt)).scalars().first()
+        return cls._build_merchant_detail(m) if m else None
 
     @classmethod
     async def create_merchant(cls, req: AdminMerchantCreateRequest, db: AsyncSession) -> AdminMerchantDetail:
@@ -89,30 +102,24 @@ class AdminService:
             db.add(owner)
             await db.flush()
 
+        now = datetime.now(timezone.utc)
+        trial_expires_at = now + timedelta(days=90)
+
         merchant = Merchant(
-            user_id=owner.id,
-            business_name=req.business_name,
-            sector=Sector(req.sector.upper()),
-            address_text=req.address_text,
-            city=req.city,
-            latitude=req.latitude,
-            longitude=req.longitude,
-            gstin=req.gstin,
-            kyc_doc_url="https://res.cloudinary.com/fyndo/kyc/verified_sample.jpg",
-            kyc_status=KycStatus.APPROVED
+            user_id=owner.id, business_name=req.business_name, sector=Sector(req.sector.upper()),
+            address_text=req.address_text, city=req.city, latitude=req.latitude, longitude=req.longitude,
+            gstin=req.gstin, kyc_doc_url="https://res.cloudinary.com/fyndo/kyc/verified_sample.jpg",
+            kyc_status=KycStatus.APPROVED, subscription_status=SubscriptionStatus.ACTIVE,
+            subscription_start_date=now, subscription_expires_at=trial_expires_at,
         )
         db.add(merchant)
         await db.flush()
 
         if req.staff_pin:
-            staff = MerchantStaff(
-                merchant_id=merchant.id,
-                staff_name=req.staff_name or "Store Cashier",
-                phone=phone,
-                pin_hash=get_password_hash(req.staff_pin),
-                is_active=True
-            )
-            db.add(staff)
+            db.add(MerchantStaff(
+                merchant_id=merchant.id, staff_name=req.staff_name or "Store Cashier",
+                phone=phone, pin_hash=get_password_hash(req.staff_pin), is_active=True
+            ))
             await db.flush()
 
         return (await cls.list_merchants(db))[0]
@@ -133,6 +140,64 @@ class AdminService:
         if req.kyc_status: m.kyc_status = KycStatus(req.kyc_status.upper())
         await db.flush()
         return m
+
+    @classmethod
+    async def update_subscription(
+        cls,
+        merchant_id: uuid.UUID,
+        req: AdminMerchantSubscriptionUpdateRequest,
+        db: AsyncSession,
+    ) -> Optional[AdminMerchantSubscriptionResponse]:
+        res = await db.execute(select(Merchant).where(Merchant.id == merchant_id))
+        merchant = res.scalars().first()
+        if not merchant:
+            return None
+        if req.subscription_status is not None:
+            merchant.subscription_status = req.subscription_status
+        if req.subscription_expires_at is not None:
+            merchant.subscription_expires_at = as_aware(req.subscription_expires_at)
+        await db.flush()
+        status_str = getattr(merchant.subscription_status, "value", str(merchant.subscription_status))
+        return AdminMerchantSubscriptionResponse(
+            merchant_id=merchant.id,
+            subscription_status=status_str,
+            subscription_start_date=merchant.subscription_start_date,
+            subscription_expires_at=merchant.subscription_expires_at,
+            is_subscription_active=merchant.is_subscription_active,
+            effective_subscription_status=merchant.effective_subscription_status,
+        )
+
+    @classmethod
+    async def extend_subscription(
+        cls,
+        merchant_id: uuid.UUID,
+        req: AdminMerchantSubscriptionExtendRequest,
+        db: AsyncSession,
+    ) -> Optional[AdminMerchantSubscriptionResponse]:
+        res = await db.execute(select(Merchant).where(Merchant.id == merchant_id))
+        merchant = res.scalars().first()
+        if not merchant:
+            return None
+        added_days = 90 if (req.duration_days is None and req.months is None) else (
+            (req.duration_days or 0) + ((req.months or 0) * 30)
+        )
+        now = datetime.now(timezone.utc)
+        current_exp = as_aware(merchant.subscription_expires_at)
+        base_time = current_exp if current_exp and current_exp > now else now
+        merchant.subscription_expires_at = base_time + timedelta(days=added_days)
+        merchant.subscription_status = SubscriptionStatus.ACTIVE
+        if merchant.subscription_start_date is None:
+            merchant.subscription_start_date = now
+        await db.flush()
+        status_str = getattr(merchant.subscription_status, "value", str(merchant.subscription_status))
+        return AdminMerchantSubscriptionResponse(
+            merchant_id=merchant.id,
+            subscription_status=status_str,
+            subscription_start_date=merchant.subscription_start_date,
+            subscription_expires_at=merchant.subscription_expires_at,
+            is_subscription_active=merchant.is_subscription_active,
+            effective_subscription_status=merchant.effective_subscription_status,
+        )
 
     @classmethod
     async def list_all_reels(cls, status: Optional[str], db: AsyncSession) -> List[AdminReelListItem]:

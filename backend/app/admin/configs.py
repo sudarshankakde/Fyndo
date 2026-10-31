@@ -66,10 +66,14 @@ MODEL_CONFIGS = [
         "singular": "Merchant",
         "group": "People",
         "label_column": "business_name",
-        "list_columns": ["business_name", "city", "sector", "kyc_status", "created_at"],
+        "list_columns": ["business_name", "city", "sector", "kyc_status", "subscription_status", "subscription_expires_at", "created_at"],
         "search_columns": ["business_name", "city", "gstin", "address_text"],
         "sort_column": "created_at",
-        "choices": {"sector": _values(Sector), "kyc_status": _values(KycStatus)},
+        "choices": {
+            "sector": _values(Sector),
+            "kyc_status": _values(KycStatus),
+            "subscription_status": ["ACTIVE", "INACTIVE", "EXPIRED"],
+        },
         "readonly": ["id", "created_at", "updated_at"],
     },
     {

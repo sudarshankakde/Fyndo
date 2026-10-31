@@ -1,0 +1,208 @@
+{% extends "base.html" %}
+{% block title %}Merchants Directory · {{ panel_name }}{% endblock %}
+{% block heading %}Merchant Directory & Accounts{% endblock %}
+{% block crumbs %}Manage merchant subscriptions, KYC compliance, onboarding status, and store controls{% endblock %}
+
+{% block content %}
+<!-- Bulk Actions Bar -->
+<div class="card" style="margin-bottom: 20px; padding: 14px 20px;">
+  <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+    <div style="font-size: 13px; font-weight: 600; color: var(--text);">
+      ⚡ Quick Bulk Operations:
+    </div>
+    <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+      <form method="post" action="/admin/merchants/bulk/extend-expired" style="display: inline;"
+            onsubmit="return confirm('Extend all currently expired merchants by 90 days?');">
+        <button type="submit" class="btn btn-primary" style="font-size: 12px; padding: 6px 12px;">
+          📅 Extend All Expired (+90d)
+        </button>
+      </form>
+      <form method="post" action="/admin/merchants/bulk/approve-kyc" style="display: inline;"
+            onsubmit="return confirm('Approve all pending merchant KYC submissions?');">
+        <button type="submit" class="btn btn-primary" style="background: #0f9d58; border-color: #0f9d58; font-size: 12px; padding: 6px 12px;">
+          🛡 Approve All Pending KYC
+        </button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Search & Filters -->
+<div class="card" style="margin-bottom: 20px; padding: 16px 20px;">
+  <form method="get" action="/admin/merchants" style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 14px;">
+    <input type="text" name="q" value="{{ search_query }}" placeholder="Search by store name, phone or owner name..."
+           class="input" style="flex: 1; min-width: 240px;">
+    <input type="hidden" name="sub_filter" value="{{ sub_filter }}">
+    <input type="hidden" name="kyc_filter" value="{{ kyc_filter }}">
+    <button type="submit" class="btn btn-primary" style="padding: 8px 16px;">Search</button>
+    {% if search_query %}
+    <a href="/admin/merchants?sub_filter={{ sub_filter }}&kyc_filter={{ kyc_filter }}" class="btn btn-ghost" style="border: 1px solid var(--line);">Clear</a>
+    {% endif %}
+  </form>
+
+  <!-- Filter Chips Group -->
+  <div style="display: flex; flex-direction: column; gap: 10px;">
+    <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+      <span style="font-size: 12px; font-weight: 600; color: var(--muted); min-width: 90px;">Subscription:</span>
+      <a class="btn {% if sub_filter == 'ALL' %}btn-primary{% else %}btn-ghost{% endif %}"
+         href="/admin/merchants?sub_filter=ALL&kyc_filter={{ kyc_filter }}{% if search_query %}&q={{ search_query }}{% endif %}" style="border: 1px solid var(--line); font-size: 11.5px; padding: 4px 10px;">
+        All
+      </a>
+      <a class="btn {% if sub_filter == 'ACTIVE' %}btn-primary{% else %}btn-ghost{% endif %}"
+         href="/admin/merchants?sub_filter=ACTIVE&kyc_filter={{ kyc_filter }}{% if search_query %}&q={{ search_query }}{% endif %}" style="border: 1px solid var(--line); font-size: 11.5px; padding: 4px 10px;">
+        Active
+      </a>
+      <a class="btn {% if sub_filter == 'EXPIRED' %}btn-primary{% else %}btn-ghost{% endif %}"
+         href="/admin/merchants?sub_filter=EXPIRED&kyc_filter={{ kyc_filter }}{% if search_query %}&q={{ search_query }}{% endif %}" style="border: 1px solid var(--line); font-size: 11.5px; padding: 4px 10px;">
+        Expired
+      </a>
+      <a class="btn {% if sub_filter == 'INACTIVE' %}btn-primary{% else %}btn-ghost{% endif %}"
+         href="/admin/merchants?sub_filter=INACTIVE&kyc_filter={{ kyc_filter }}{% if search_query %}&q={{ search_query }}{% endif %}" style="border: 1px solid var(--line); font-size: 11.5px; padding: 4px 10px;">
+        Inactive
+      </a>
+      <a class="btn {% if sub_filter == 'TRIAL' %}btn-primary{% else %}btn-ghost{% endif %}"
+         href="/admin/merchants?sub_filter=TRIAL&kyc_filter={{ kyc_filter }}{% if search_query %}&q={{ search_query }}{% endif %}" style="border: 1px solid var(--line); font-size: 11.5px; padding: 4px 10px;">
+        Trial
+      </a>
+    </div>
+
+    <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+      <span style="font-size: 12px; font-weight: 600; color: var(--muted); min-width: 90px;">KYC Status:</span>
+      <a class="btn {% if kyc_filter == 'ALL' %}btn-primary{% else %}btn-ghost{% endif %}"
+         href="/admin/merchants?sub_filter={{ sub_filter }}&kyc_filter=ALL{% if search_query %}&q={{ search_query }}{% endif %}" style="border: 1px solid var(--line); font-size: 11.5px; padding: 4px 10px;">
+        All KYC
+      </a>
+      <a class="btn {% if kyc_filter == 'APPROVED' %}btn-primary{% else %}btn-ghost{% endif %}"
+         href="/admin/merchants?sub_filter={{ sub_filter }}&kyc_filter=APPROVED{% if search_query %}&q={{ search_query }}{% endif %}" style="border: 1px solid var(--line); font-size: 11.5px; padding: 4px 10px;">
+        Approved
+      </a>
+      <a class="btn {% if kyc_filter == 'PENDING' %}btn-primary{% else %}btn-ghost{% endif %}"
+         href="/admin/merchants?sub_filter={{ sub_filter }}&kyc_filter=PENDING{% if search_query %}&q={{ search_query }}{% endif %}" style="border: 1px solid var(--line); font-size: 11.5px; padding: 4px 10px;">
+        Pending
+      </a>
+      <a class="btn {% if kyc_filter == 'REJECTED' %}btn-primary{% else %}btn-ghost{% endif %}"
+         href="/admin/merchants?sub_filter={{ sub_filter }}&kyc_filter=REJECTED{% if search_query %}&q={{ search_query }}{% endif %}" style="border: 1px solid var(--line); font-size: 11.5px; padding: 4px 10px;">
+        Rejected
+      </a>
+    </div>
+  </div>
+</div>
+
+<!-- Merchant Table -->
+{% if not merchants %}
+<div class="card" style="text-align: center; padding: 48px 24px;">
+  <div style="font-size: 32px; margin-bottom: 12px;">🏪</div>
+  <h2 style="font-size: 18px; margin-bottom: 6px;">No Merchants Found</h2>
+  <p class="muted" style="margin-bottom: 0;">No merchant profiles matched the selected criteria.</p>
+</div>
+{% else %}
+<div class="card">
+  <table class="grid">
+    <thead>
+      <tr>
+        <th>Store Name</th>
+        <th>Owner / Phone</th>
+        <th>Subscription</th>
+        <th>Expires At</th>
+        <th>KYC Status</th>
+        <th>Reels</th>
+        <th>Joined</th>
+        <th style="text-align: right;">Row Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for m in merchants %}
+      {% set eff = m.effective_subscription_status %}
+      {% set k_val = m.kyc_status.value if m.kyc_status and m.kyc_status.value is defined else (m.kyc_status | string) %}
+      <tr>
+        <td class="cell-lead">
+          <a href="/admin/merchants/{{ m.id }}" style="font-weight: 600; color: var(--text);">
+            {{ m.business_name }}
+          </a>
+          <div class="muted" style="font-size: 11px;">{{ m.city or '—' }} · {{ m.sector.value if m.sector and m.sector.value is defined else (m.sector or '—') }}</div>
+        </td>
+        <td>
+          <div>{{ m.owner.full_name if m.owner and m.owner.full_name else '—' }}</div>
+          <div class="muted" style="font-size: 11px; font-family: monospace;">{{ m.phone or (m.owner.phone if m.owner else '—') }}</div>
+        </td>
+        <td>
+          {% if eff == 'ACTIVE' %}
+            <span class="badge badge-good">Active</span>
+          {% elif eff == 'EXPIRED' %}
+            <span class="badge badge-danger">Expired</span>
+          {% else %}
+            <span class="badge badge-muted">{{ eff }}</span>
+          {% endif %}
+        </td>
+        <td style="font-size: 12px;">
+          {{ m.subscription_expires_at.strftime('%Y-%m-%d') if m.subscription_expires_at else 'No expiry' }}
+        </td>
+        <td>
+          {% if k_val == 'APPROVED' %}
+            <span class="badge badge-good">Approved</span>
+          {% elif k_val == 'REJECTED' %}
+            <span class="badge badge-danger">Rejected</span>
+          {% else %}
+            <span class="badge badge-warn">Pending</span>
+          {% endif %}
+        </td>
+        <td style="font-size: 12px; font-weight: 600;">
+          {{ reel_counts.get(m.id, 0) }}
+        </td>
+        <td class="muted" style="font-size: 11.5px;">
+          {{ m.created_at.strftime('%Y-%m-%d') if m.created_at else '—' }}
+        </td>
+        <td style="text-align: right;">
+          <div style="display: inline-flex; gap: 4px; align-items: center; justify-content: flex-end;">
+            {% if eff != 'ACTIVE' %}
+            <form method="post" action="/admin/merchants/{{ m.id }}/subscription/activate" style="display: inline;">
+              <button type="submit" class="btn btn-ghost" style="border: 1px solid var(--line); padding: 3px 6px; font-size: 11px;">
+                Activate
+              </button>
+            </form>
+            {% endif %}
+            <form method="post" action="/admin/merchants/{{ m.id }}/subscription/extend?duration_days=30" style="display: inline;">
+              <button type="submit" class="btn btn-ghost" style="border: 1px solid var(--line); padding: 3px 6px; font-size: 11px;">
+                +30d
+              </button>
+            </form>
+            {% if k_val == 'PENDING' %}
+            <form method="post" action="/admin/merchants/{{ m.id }}/kyc/approve" style="display: inline;">
+              <button type="submit" class="btn btn-primary" style="background: #0f9d58; border-color: #0f9d58; padding: 3px 6px; font-size: 11px;">
+                KYC ✓
+              </button>
+            </form>
+            {% endif %}
+            <a href="/admin/merchants/{{ m.id }}" class="btn btn-primary" style="padding: 3px 8px; font-size: 11px;">
+              Details →
+            </a>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <!-- Pagination -->
+  {% if total_pages > 1 %}
+  <div class="pagination" style="padding: 16px 20px; display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--line);">
+    <span class="page-info" style="font-size: 12px; color: var(--muted);">
+      Page {{ current_page }} of {{ total_pages }} ({{ total_count }} merchants)
+    </span>
+    <div style="display: flex; gap: 6px;">
+      {% if current_page > 1 %}
+      <a href="/admin/merchants?page={{ current_page - 1 }}&sub_filter={{ sub_filter }}&kyc_filter={{ kyc_filter }}{% if search_query %}&q={{ search_query }}{% endif %}" class="btn btn-ghost" style="border: 1px solid var(--line); padding: 4px 10px; font-size: 12px;">
+        ← Prev
+      </a>
+      {% endif %}
+      {% if current_page < total_pages %}
+      <a href="/admin/merchants?page={{ current_page + 1 }}&sub_filter={{ sub_filter }}&kyc_filter={{ kyc_filter }}{% if search_query %}&q={{ search_query }}{% endif %}" class="btn btn-ghost" style="border: 1px solid var(--line); padding: 4px 10px; font-size: 12px;">
+        Next →
+      </a>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

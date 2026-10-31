@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% block title %}Operational Audit Trail · {{ panel_name }}{% endblock %}
+{% block heading %}Operational Audit Log{% endblock %}
+{% block crumbs %}Persistent trace of administrative actions, status changes, and platform alterations{% endblock %}
+
+{% block content %}
+<!-- Search & Filter Bar -->
+<div class="card" style="margin-bottom: 20px; padding: 16px 20px;">
+  <form method="get" action="/admin/audit" style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+    <input type="text" name="q" value="{{ search_query }}" placeholder="Search by target ID, action or keyword..."
+           class="input" style="flex: 1; min-width: 220px;">
+
+    <!-- Action Filter -->
+    <select name="action" class="input" style="min-width: 180px;">
+      <option value="ALL">All Actions</option>
+      {% for act in distinct_actions %}
+      <option value="{{ act }}" {% if action_filter == act %}selected{% endif %}>{{ act }}</option>
+      {% endfor %}
+    </select>
+
+    <!-- Actor Filter -->
+    <select name="admin_user" class="input" style="min-width: 150px;">
+      <option value="ALL">All Operators</option>
+      {% for actor in distinct_actors %}
+      <option value="{{ actor }}" {% if actor_filter == actor %}selected{% endif %}>{{ actor }}</option>
+      {% endfor %}
+    </select>
+
+    <button type="submit" class="btn btn-primary" style="padding: 8px 16px;">Filter Logs</button>
+    {% if search_query or action_filter != 'ALL' or actor_filter != 'ALL' %}
+    <a href="/admin/audit" class="btn btn-ghost" style="border: 1px solid var(--line);">Reset</a>
+    {% endif %}
+  </form>
+</div>
+
+{% if not logs %}
+<div class="card" style="text-align: center; padding: 48px 24px;">
+  <div style="font-size: 32px; margin-bottom: 12px;">📋</div>
+  <h2 style="font-size: 18px; margin-bottom: 6px;">No Audit Records Found</h2>
+  <p class="muted" style="margin-bottom: 0;">No administrative actions match the selected filter criteria.</p>
+</div>
+{% else %}
+<div class="card">
+  <table class="grid">
+    <thead>
+      <tr>
+        <th>Timestamp (UTC)</th>
+        <th>Operator</th>
+        <th>Action</th>
+        <th>Target</th>
+        <th>Target ID</th>
+        <th>Details</th>
+        <th>Outcome</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for log in logs %}
+      <tr>
+        <td class="muted" style="font-size: 11.5px; white-space: nowrap;">
+          {{ log.timestamp.strftime('%Y-%m-%d %H:%M:%S') if log.timestamp else '—' }}
+        </td>
+        <td>
+          <strong style="font-size: 12px;">{{ log.admin_user or 'system' }}</strong>
+        </td>
+        <td>
+          <span class="badge badge-pill" style="font-size: 11px;">{{ log.action }}</span>
+        </td>
+        <td>
+          <span class="muted" style="font-size: 12px;">{{ log.target_type or '—' }}</span>
+        </td>
+        <td>
+          {% if log.target_id %}
+            <code style="font-size: 11px;">{{ log.target_id }}</code>
+          {% else %}
+            <span class="muted">—</span>
+          {% endif %}
+        </td>
+        <td style="font-size: 11.5px; max-width: 320px; overflow-wrap: break-word;">
+          {% if log.details %}
+            <pre style="margin: 0; font-size: 10.5px; background: #f8fafc; padding: 4px 6px; border-radius: 4px; max-height: 80px; overflow-y: auto;">{{ log.details | tojson(indent=1) if log.details is mapping else log.details }}</pre>
+          {% else %}
+            <span class="muted">—</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if log.outcome == 'success' %}
+            <span class="badge badge-good">Success</span>
+          {% else %}
+            <span class="badge badge-danger">{{ log.outcome }}</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <!-- Pagination -->
+  {% if total_pages > 1 %}
+  <div class="pagination" style="padding: 16px 20px; display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--line);">
+    <span class="page-info" style="font-size: 12px; color: var(--muted);">
+      Page {{ current_page }} of {{ total_pages }} ({{ total_logs }} recorded events)
+    </span>
+    <div style="display: flex; gap: 6px;">
+      {% if current_page > 1 %}
+      <a href="/admin/audit?page={{ current_page - 1 }}&action={{ action_filter }}&admin_user={{ actor_filter }}{% if search_query %}&q={{ search_query }}{% endif %}" class="btn btn-ghost" style="border: 1px solid var(--line); padding: 4px 10px; font-size: 12px;">
+        ← Prev
+      </a>
+      {% endif %}
+      {% if current_page < total_pages %}
+      <a href="/admin/audit?page={{ current_page + 1 }}&action={{ action_filter }}&admin_user={{ actor_filter }}{% if search_query %}&q={{ search_query }}{% endif %}" class="btn btn-ghost" style="border: 1px solid var(--line); padding: 4px 10px; font-size: 12px;">
+        Next →
+      </a>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

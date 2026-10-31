@@ -5,7 +5,15 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.system_settings import AUTO_APPROVE_KYC, AUTO_APPROVE_REELS, SETTING_DEFAULTS, SystemSetting
+from app.models.system_settings import (
+    AUTO_APPROVE_KYC,
+    AUTO_APPROVE_REELS,
+    AUTO_TRIAL_DURATION_DAYS,
+    AUTO_TRIAL_ENABLED,
+    MAINTENANCE_MODE,
+    SETTING_DEFAULTS,
+    SystemSetting,
+)
 
 
 async def get_setting(db: AsyncSession, key: str) -> Any:
@@ -24,8 +32,13 @@ async def set_setting(
     if row is None:
         row = SystemSetting(key=key, description=SETTING_DEFAULTS[key]["description"])
         db.add(row)
-    if key in (AUTO_APPROVE_REELS, AUTO_APPROVE_KYC) and isinstance(value, str):
+    if key in (AUTO_APPROVE_REELS, AUTO_APPROVE_KYC, AUTO_TRIAL_ENABLED, MAINTENANCE_MODE) and isinstance(value, str):
         row.value = value.strip().lower() in ("true", "1", "yes", "on", "t")
+    elif key == AUTO_TRIAL_DURATION_DAYS:
+        try:
+            row.value = max(1, min(3650, int(value)))
+        except (ValueError, TypeError):
+            row.value = 90
     else:
         row.value = value
     row.updated_by_user_id = updated_by
@@ -63,6 +76,37 @@ async def is_auto_approve_enabled(db: AsyncSession) -> bool:
 
 async def is_auto_approve_kyc_enabled(db: AsyncSession) -> bool:
     val = await get_setting(db, AUTO_APPROVE_KYC)
+    if isinstance(val, bool):
+        return val
+    if isinstance(val, (int, float)):
+        return bool(val)
+    if isinstance(val, str):
+        return val.strip().lower() in ("true", "1", "yes", "on", "t")
+    return bool(val)
+
+
+async def is_auto_trial_enabled(db: AsyncSession) -> bool:
+    val = await get_setting(db, AUTO_TRIAL_ENABLED)
+    if isinstance(val, bool):
+        return val
+    if isinstance(val, (int, float)):
+        return bool(val)
+    if isinstance(val, str):
+        return val.strip().lower() in ("true", "1", "yes", "on", "t")
+    return True if val is None else bool(val)
+
+
+async def get_auto_trial_duration_days(db: AsyncSession) -> int:
+    val = await get_setting(db, AUTO_TRIAL_DURATION_DAYS)
+    try:
+        days = int(val)
+        return max(1, min(3650, days))
+    except (ValueError, TypeError):
+        return 90
+
+
+async def is_maintenance_mode_enabled(db: AsyncSession) -> bool:
+    val = await get_setting(db, MAINTENANCE_MODE)
     if isinstance(val, bool):
         return val
     if isinstance(val, (int, float)):
