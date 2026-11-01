@@ -80,6 +80,8 @@ async def get_onboarding_draft(
             latitude=draft.latitude,
             longitude=draft.longitude,
             gstin=draft.gstin,
+            shop_act=draft.shop_act,
+            udyam=draft.udyam,
             kyc_doc_url=draft.kyc_doc_url,
             updated_at=draft.updated_at,
         ),
@@ -109,6 +111,8 @@ async def save_onboarding_draft(
             latitude=request.latitude,
             longitude=request.longitude,
             gstin=request.gstin,
+            shop_act=request.shop_act,
+            udyam=request.udyam,
             kyc_doc_url=request.kyc_doc_url,
         )
         db.add(draft)
@@ -132,6 +136,10 @@ async def save_onboarding_draft(
             draft.longitude = request.longitude
         if request.gstin is not None:
             draft.gstin = request.gstin
+        if request.shop_act is not None:
+            draft.shop_act = request.shop_act
+        if request.udyam is not None:
+            draft.udyam = request.udyam
         if request.kyc_doc_url is not None:
             draft.kyc_doc_url = request.kyc_doc_url
 
@@ -151,6 +159,8 @@ async def save_onboarding_draft(
             latitude=draft.latitude,
             longitude=draft.longitude,
             gstin=draft.gstin,
+            shop_act=draft.shop_act,
+            udyam=draft.udyam,
             kyc_doc_url=draft.kyc_doc_url,
             updated_at=draft.updated_at,
         ),
@@ -246,6 +256,8 @@ async def onboard_merchant(
         latitude=request.latitude,
         longitude=request.longitude,
         gstin=request.gstin,
+        shop_act=request.shop_act,
+        udyam=request.udyam,
         kyc_doc_url=request.kyc_doc_url,
         kyc_status=initial_kyc_status,
         cover_url=cover_url,

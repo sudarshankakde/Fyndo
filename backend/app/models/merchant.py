@@ -85,8 +85,10 @@ class Merchant(Base):
     city: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
     latitude: Mapped[float] = mapped_column(Float, nullable=False)
     longitude: Mapped[float] = mapped_column(Float, nullable=False)
-    gstin: Mapped[str] = mapped_column(String(20), nullable=True)
-    kyc_doc_url: Mapped[str] = mapped_column(String(500), nullable=False)
+    gstin: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    shop_act: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    udyam: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    kyc_doc_url: Mapped[str] = mapped_column(Text, nullable=False)
     kyc_status: Mapped[KycStatus] = mapped_column(
         String(20),
         default=KycStatus.PENDING,
@@ -222,7 +224,9 @@ class MerchantOnboardingDraft(Base):
     latitude: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     longitude: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     gstin: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
-    kyc_doc_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    shop_act: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    udyam: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    kyc_doc_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),

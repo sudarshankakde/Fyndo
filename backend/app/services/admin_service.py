@@ -61,6 +61,10 @@ class AdminService:
             longitude=m.longitude,
             owner_phone=m.owner.phone if m.owner else "+910000000000",
             kyc_status=val(m.kyc_status),
+            gstin=m.gstin,
+            shop_act=m.shop_act,
+            udyam=m.udyam,
+            kyc_doc_url=m.kyc_doc_url,
             staff_name=m.staff[0].staff_name if m.staff else None,
             staff_phone=m.staff[0].phone if m.staff else None,
             reels_count=len(active_reels),
@@ -108,7 +112,8 @@ class AdminService:
         merchant = Merchant(
             user_id=owner.id, business_name=req.business_name, sector=Sector(req.sector.upper()),
             address_text=req.address_text, city=req.city, latitude=req.latitude, longitude=req.longitude,
-            gstin=req.gstin, kyc_doc_url="https://res.cloudinary.com/fyndo/kyc/verified_sample.jpg",
+            gstin=req.gstin, shop_act=req.shop_act, udyam=req.udyam,
+            kyc_doc_url="https://res.cloudinary.com/fyndo/kyc/verified_sample.jpg",
             kyc_status=KycStatus.APPROVED, subscription_status=SubscriptionStatus.ACTIVE,
             subscription_start_date=now, subscription_expires_at=trial_expires_at,
         )
@@ -137,6 +142,8 @@ class AdminService:
         if req.latitude is not None: m.latitude = req.latitude
         if req.longitude is not None: m.longitude = req.longitude
         if req.gstin is not None: m.gstin = req.gstin
+        if req.shop_act is not None: m.shop_act = req.shop_act
+        if req.udyam is not None: m.udyam = req.udyam
         if req.kyc_status: m.kyc_status = KycStatus(req.kyc_status.upper())
         await db.flush()
         return m

@@ -27,7 +27,8 @@ logger = logging.getLogger("fyndo.media")
 
 VIDEO_EXTENSIONS = {".mp4", ".mov", ".webm", ".m4v", ".mkv"}
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
-ALLOWED_EXTENSIONS = VIDEO_EXTENSIONS | IMAGE_EXTENSIONS
+DOC_EXTENSIONS = {".pdf"}
+ALLOWED_EXTENSIONS = VIDEO_EXTENSIONS | IMAGE_EXTENSIONS | DOC_EXTENSIONS
 
 _FFMPEG_AVAILABLE: Optional[bool] = None
 
@@ -53,7 +54,9 @@ def upload_root() -> str:
 
 
 def sniff_media_kind(header: bytes) -> Optional[str]:
-    """Detects 'video'/'image' from the first bytes of a file, or None."""
+    """Detects 'video'/'image'/'document' from the first bytes of a file, or None."""
+    if len(header) >= 4 and header[:4] == b"%PDF":
+        return "document"
     if len(header) < 12:
         return None
     if header[:4] == b"\x89PNG":
@@ -70,8 +73,8 @@ def sniff_media_kind(header: bytes) -> Optional[str]:
 
 
 def max_bytes_for(folder: str, content_type: Optional[str]) -> int:
-    is_image = bool(content_type and content_type.startswith("image/"))
-    megabytes = settings.MEDIA_MAX_IMAGE_MB if is_image or folder == "kyc" else settings.MEDIA_MAX_VIDEO_MB
+    is_image_or_doc = bool(content_type and (content_type.startswith("image/") or content_type == "application/pdf"))
+    megabytes = settings.MEDIA_MAX_IMAGE_MB if is_image_or_doc or folder == "kyc" else settings.MEDIA_MAX_VIDEO_MB
     return megabytes * 1024 * 1024
 
 
@@ -84,6 +87,7 @@ def resolve_extension(filename: str, content_type: Optional[str] = None) -> str:
             "image/jpg": ".jpg",
             "image/png": ".png",
             "image/webp": ".webp",
+            "application/pdf": ".pdf",
             "video/mp4": ".mp4",
             "video/quicktime": ".mov",
             "video/webm": ".webm",
@@ -166,7 +170,12 @@ def store_upload(upload: UploadFile, folder: str, sync_cdn: bool = True) -> Dict
     """Validates and persists an upload. Returns a metadata dict."""
     filename = upload.filename or "upload"
     ext = resolve_extension(filename, upload.content_type)
-    expected_kind = "image" if ext in IMAGE_EXTENSIONS else "video"
+    if ext in IMAGE_EXTENSIONS:
+        expected_kind = "image"
+    elif ext in DOC_EXTENSIONS:
+        expected_kind = "document"
+    else:
+        expected_kind = "video"
     limit = max_bytes_for(folder, upload.content_type)
 
     target_dir = os.path.join(upload_root(), folder)
@@ -183,7 +192,7 @@ def store_upload(upload: UploadFile, folder: str, sync_cdn: bool = True) -> Dict
     if actual_kind is None or actual_kind != expected_kind:
         os.remove(destination)
         raise MediaValidationError(
-            "The file content does not match its extension. Upload the original video or image."
+            "The file content does not match its extension. Upload the original video, image, or PDF document."
         )
 
     # Automatic WebP conversion for all uploaded images before storing to bucket
@@ -220,8 +229,9 @@ def store_upload(upload: UploadFile, folder: str, sync_cdn: bool = True) -> Dict
     # Production path: Sync to Cloudinary if configured. The reel editor flow
     # opts out (sync_cdn=False) because the raw clip is a scratch asset that
     # the server-side editor replaces before it is ever shown to viewers.
+    cloudinary_resource = "auto" if expected_kind == "document" else expected_kind
     cloudinary_data = (
-        CloudinaryService.upload_file(destination, folder, expected_kind) if sync_cdn else None
+        CloudinaryService.upload_file(destination, folder, cloudinary_resource) if sync_cdn else None
     )
     if cloudinary_data:
         # If Cloudinary upload succeeded, we also try to upload the thumbnail if it exists

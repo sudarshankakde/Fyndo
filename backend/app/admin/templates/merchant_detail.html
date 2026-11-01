@@ -27,17 +27,22 @@
         <dt>City</dt><dd>{{ merchant.city or '—' }}</dd>
         <dt>Store Address</dt><dd>{{ merchant.address_text or '—' }}</dd>
         <dt>GSTIN</dt><dd>{{ merchant.gstin or 'Not provided' }}</dd>
+        <dt>Shop Act</dt><dd>{{ merchant.shop_act or 'Not provided' }}</dd>
+        <dt>Udyam</dt><dd>{{ merchant.udyam or 'Not provided' }}</dd>
         <dt>Joined</dt><dd>{{ merchant.created_at.strftime('%Y-%m-%d %H:%M') if merchant.created_at else '—' }}</dd>
       </dl>
 
       <!-- KYC Document Preview & Decision -->
       <div style="border-top: 1px solid var(--line); padding-top: 14px;">
-        <div style="font-weight: 600; font-size: 13px; margin-bottom: 8px;">Uploaded Verification Document:</div>
-        {% if merchant.kyc_doc_url %}
-          <div style="margin-bottom: 12px;">
-            <a href="{{ merchant.kyc_doc_url }}" target="_blank" rel="noopener noreferrer" class="btn btn-ghost" style="border: 1px solid var(--line); font-size: 12px; padding: 4px 10px;">
-              📄 Open Document Preview ↗
+        <div style="font-weight: 600; font-size: 13px; margin-bottom: 8px;">Uploaded Verification Document(s):</div>
+        {% set docs = merchant.kyc_doc_url | parse_kyc_docs %}
+        {% if docs %}
+          <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px;">
+            {% for doc in docs %}
+            <a href="{{ doc.url }}" target="_blank" rel="noopener noreferrer" class="btn btn-ghost" style="border: 1px solid var(--line); font-size: 12px; padding: 4px 10px;">
+              {% if doc.is_pdf %}📑{% else %}📄{% endif %} {{ doc.label }} ↗
             </a>
+            {% endfor %}
           </div>
         {% else %}
           <p class="muted" style="font-size: 12px;">No verification document submitted.</p>
@@ -49,38 +54,24 @@
         </div>
         {% endif %}
 
-        <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+        <div style="display: flex; gap: 12px; align-items: flex-start; flex-wrap: wrap; margin-top: 8px;">
           {% if k_val != 'APPROVED' %}
           <form method="post" action="/admin/merchants/{{ merchant.id }}/kyc/approve">
-            <button type="submit" class="btn btn-primary" style="background: #0f9d58; border-color: #0f9d58;">
+            <button type="submit" class="btn btn-primary" style="background: #0f9d58; border-color: #0f9d58; padding: 6px 14px;">
               ✓ Approve KYC Verification
             </button>
           </form>
           {% endif %}
 
-          <details style="position: relative;">
-            <summary class="btn btn-danger" style="cursor: pointer; list-style: none;">
-              ✕ Reject KYC...
-            </summary>
-            <div style="position: absolute;bottom: 50px; left: 0; z-index: 100; background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.15); width: 280px; margin-top: 4px;">
-              <form method="post" action="/admin/merchants/{{ merchant.id }}/kyc/reject">
-                <div style="font-size: 12px; font-weight: 600; margin-bottom: 6px;">Select / Enter Reason:</div>
-                <select class="input" style="width: 100%; font-size: 11.5px; margin-bottom: 6px;"
-                        onchange="if(this.value){ document.getElementById('kyc-reason-detail').value = this.value; }">
-                  <option value="">Standard reasons...</option>
-                  <option value="Submitted documents do not match business registration details.">Mismatch with registration details</option>
-                  <option value="Document image is blurred or unreadable.">Blurred / unreadable document</option>
-                  <option value="Document is expired or invalid.">Expired or invalid document</option>
-                  <option value="Store address does not match uploaded registration document.">Address mismatch</option>
-                </select>
-                <input type="text" id="kyc-reason-detail" name="rejection_reason" placeholder="Rejection details..."
-                       class="input" style="width: 100%; font-size: 11.5px; margin-bottom: 8px;" required>
-                <button type="submit" class="btn btn-danger" style="width: 100%; font-size: 12px; padding: 6px;">
-                  Confirm Rejection
-                </button>
-              </form>
-            </div>
-          </details>
+          {% if k_val != 'REJECTED' %}
+          <form method="post" action="/admin/merchants/{{ merchant.id }}/kyc/reject" style="flex: 1; min-width: 300px; display: flex; gap: 8px; align-items: center;">
+            <input type="text" name="rejection_reason" placeholder="Enter reason for rejection visible to merchant..."
+                   class="input" style="flex: 1; font-size: 12px; padding: 6px 10px;" required>
+            <button type="submit" class="btn btn-danger" style="padding: 6px 12px; white-space: nowrap;">
+              ✕ Reject KYC
+            </button>
+          </form>
+          {% endif %}
         </div>
       </div>
     </div>

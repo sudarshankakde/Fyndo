@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 
 
 class ProfileVideoUpdateRequest(BaseModel):
-    profile_video_url: str = Field(..., min_length=5, max_length=500)
+    profile_video_url: Optional[str] = Field(None, max_length=500)
     profile_video_thumbnail_url: Optional[str] = Field(None, max_length=500)
 
 

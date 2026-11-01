@@ -53,6 +53,10 @@ class AdminMerchantDetail(BaseModel):
     longitude: float
     owner_phone: str
     kyc_status: str
+    gstin: Optional[str] = None
+    shop_act: Optional[str] = None
+    udyam: Optional[str] = None
+    kyc_doc_url: Optional[str] = None
     staff_name: Optional[str] = None
     staff_phone: Optional[str] = None
     reels_count: int = 0
@@ -114,6 +118,8 @@ class AdminMerchantCreateRequest(BaseModel):
     latitude: float = Field(21.1458)
     longitude: float = Field(79.0882)
     gstin: Optional[str] = None
+    shop_act: Optional[str] = None
+    udyam: Optional[str] = None
     staff_name: Optional[str] = "Store Cashier"
     staff_pin: Optional[str] = "123456"
 
@@ -126,6 +132,8 @@ class AdminMerchantUpdateRequest(BaseModel):
     latitude: Optional[float] = None
     longitude: Optional[float] = None
     gstin: Optional[str] = None
+    shop_act: Optional[str] = None
+    udyam: Optional[str] = None
     kyc_status: Optional[str] = None
 
 

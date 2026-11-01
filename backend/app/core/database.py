@@ -106,6 +106,12 @@ _COMPAT_COLUMNS = {
         "subscription_status": ("VARCHAR(20) NOT NULL DEFAULT 'ACTIVE'", "VARCHAR(20) NOT NULL DEFAULT 'ACTIVE'"),
         "subscription_start_date": ("DATETIME NULL", "TIMESTAMPTZ NULL"),
         "subscription_expires_at": ("DATETIME NULL", "TIMESTAMPTZ NULL"),
+        "shop_act": ("VARCHAR(50) NULL", "VARCHAR(50) NULL"),
+        "udyam": ("VARCHAR(50) NULL", "VARCHAR(50) NULL"),
+    },
+    "merchant_onboarding_drafts": {
+        "shop_act": ("VARCHAR(50) NULL", "VARCHAR(50) NULL"),
+        "udyam": ("VARCHAR(50) NULL", "VARCHAR(50) NULL"),
     },
     "merchant_staff": {
         "can_upload_reels": ("BOOLEAN NOT NULL DEFAULT 0", "BOOLEAN NOT NULL DEFAULT FALSE"),
@@ -174,6 +180,11 @@ async def ensure_compatibility_schema() -> None:
                     "WHERE subscription_expires_at IS NULL"
                 )
             )
+            try:
+                await conn.execute(text("ALTER TABLE merchants ALTER COLUMN kyc_doc_url TYPE TEXT"))
+                await conn.execute(text("ALTER TABLE merchant_onboarding_drafts ALTER COLUMN kyc_doc_url TYPE TEXT"))
+            except Exception:
+                pass
         for statement in _PERFORMANCE_INDEXES:
             await conn.execute(text(statement))
     _compatibility_schema_ready = True

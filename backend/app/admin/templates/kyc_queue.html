@@ -64,6 +64,8 @@
             {{ m.business_name }}
           </a>
           <div class="muted" style="font-size: 11px;">GSTIN: {{ m.gstin or 'Not provided' }}</div>
+          {% if m.shop_act %}<div class="muted" style="font-size: 11px;">Shop Act: {{ m.shop_act }}</div>{% endif %}
+          {% if m.udyam %}<div class="muted" style="font-size: 11px;">Udyam: {{ m.udyam }}</div>{% endif %}
         </td>
         <td>
           <div>{{ m.owner.full_name if m.owner and m.owner.full_name else '—' }}</div>
@@ -74,10 +76,15 @@
           <div class="muted" style="font-size: 11px;">{{ m.sector.value if m.sector and m.sector.value is defined else (m.sector or '—') }}</div>
         </td>
         <td>
-          {% if m.kyc_doc_url %}
-          <a href="{{ m.kyc_doc_url }}" target="_blank" rel="noopener noreferrer" class="btn btn-ghost" style="padding: 4px 8px; font-size: 12px; border: 1px solid var(--line);">
-            📄 View Document
-          </a>
+          {% set docs = m.kyc_doc_url | parse_kyc_docs %}
+          {% if docs %}
+          <div style="display: flex; flex-direction: column; gap: 4px;">
+            {% for doc in docs %}
+            <a href="{{ doc.url }}" target="_blank" rel="noopener noreferrer" class="btn btn-ghost" style="padding: 3px 8px; font-size: 11.5px; border: 1px solid var(--line); white-space: nowrap;">
+              {% if doc.is_pdf %}📑{% else %}📄{% endif %} {{ doc.label }}
+            </a>
+            {% endfor %}
+          </div>
           {% else %}
           <span class="muted" style="font-size: 12px;">No doc</span>
           {% endif %}
@@ -95,45 +102,33 @@
           {% endif %}
         </td>
         <td style="text-align: right;">
-          <div style="display: inline-flex; gap: 6px; align-items: center; justify-content: flex-end;">
-            {% if k_val != 'APPROVED' %}
-            <form method="post" action="/admin/kyc/{{ m.id }}/approve" style="display: inline;">
-              <button type="submit" class="btn btn-primary" style="padding: 4px 10px; font-size: 12px; background: #0f9d58; border-color: #0f9d58;">
-                ✓ Approve
-              </button>
-            </form>
-            {% endif %}
+          <div style="display: flex; flex-direction: column; gap: 6px; align-items: flex-end; justify-content: center;">
+            <div style="display: flex; gap: 6px; align-items: center;">
+              {% if k_val != 'APPROVED' %}
+              <form method="post" action="/admin/kyc/{{ m.id }}/approve" style="display: inline;">
+                <button type="submit" class="btn btn-primary" style="padding: 4px 10px; font-size: 12px; background: #0f9d58; border-color: #0f9d58;">
+                  ✓ Approve
+                </button>
+              </form>
+              {% endif %}
+              <a href="/admin/merchants/{{ m.id }}" class="btn btn-ghost" style="padding: 4px 8px; font-size: 12px;">
+                Details →
+              </a>
+            </div>
 
             {% if k_val != 'REJECTED' %}
-            <details style="display: inline-block; text-align: left; position: relative;">
-              <summary class="btn btn-danger" style="padding: 4px 10px; font-size: 12px; cursor: pointer; list-style: none;">
-                ✕ Reject...
-              </summary>
-              <div style="position: absolute; right: 0; z-index: 100; background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.15); width: 280px; margin-top: 4px;">
-                <form method="post" action="/admin/kyc/{{ m.id }}/reject">
-                  <div style="font-size: 12px; font-weight: 600; margin-bottom: 6px;">Select Rejection Reason:</div>
-                  <select class="input" style="width: 100%; font-size: 11.5px; margin-bottom: 6px;"
-                          onchange="if(this.value){ document.getElementById('kyc-reason-{{ m.id }}').value = this.value; }">
-                    <option value="">Standard reasons...</option>
-                    <option value="Submitted documents do not match business registration details.">Mismatch with registration details</option>
-                    <option value="Document image is blurred, unreadable, or corrupted.">Blurred or unreadable document</option>
-                    <option value="Document is expired or invalid under regulatory standards.">Expired or invalid document</option>
-                    <option value="Store address does not match uploaded registration document.">Store address does not match</option>
-                    <option value="GSTIN details could not be validated with GST portal.">Invalid or unverifiable GSTIN</option>
-                  </select>
-                  <input type="text" id="kyc-reason-{{ m.id }}" name="rejection_reason" placeholder="Specific rejection details..."
-                         class="input" style="width: 100%; font-size: 11.5px; margin-bottom: 8px;" required>
-                  <button type="submit" class="btn btn-danger" style="width: 100%; font-size: 12px; padding: 6px;">
-                    Confirm Rejection
-                  </button>
-                </form>
-              </div>
-            </details>
+            <form method="post" action="/admin/kyc/{{ m.id }}/reject" style="display: flex; gap: 4px; align-items: center; width: 100%; max-width: 320px;">
+              <input type="text" name="rejection_reason" placeholder="Enter reason for rejection visible to merchant..."
+                     class="input" style="font-size: 11.5px; padding: 4px 8px; flex: 1;" required>
+              <button type="submit" class="btn btn-danger" style="padding: 4px 10px; font-size: 11.5px; white-space: nowrap;">
+                ✕ Reject
+              </button>
+            </form>
+            {% elif m.kyc_rejection_reason %}
+            <div class="muted" style="font-size: 11px; max-width: 280px; text-align: right; color: var(--danger);">
+              Reason: {{ m.kyc_rejection_reason }}
+            </div>
             {% endif %}
-
-            <a href="/admin/merchants/{{ m.id }}" class="btn btn-ghost" style="padding: 4px 8px; font-size: 12px;">
-              Details →
-            </a>
           </div>
         </td>
       </tr>

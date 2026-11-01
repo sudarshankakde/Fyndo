@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
@@ -11,6 +11,8 @@ from app.api.v1.endpoints.merchant_context import MerchantContext, get_merchant_
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.rate_limit import rate_limit
+from app.core.time_utils import IST
+from app.models.coupon import CouponTemplate, DiscountType
 from app.models.merchant import KycStatus, Merchant, MerchantStaff
 from app.models.reel import Reel, ReelStatus
 from app.models.reel_engagement import ReelComment, ReelLike
@@ -26,8 +28,16 @@ from app.schemas.reel import (
 from app.services.category_assets import get_default_logo_url
 from app.services.cloudinary_service import CloudinaryService
 from app.services.merchant_engagement_service import coupon_counts_for_templates
-from app.services.reel_feed_service import _count_map, _hydrate_user_likes, build_feed
-from app.services.reel_lifecycle_service import as_aware, live_offer_clause, utcnow
+from app.services.reel_feed_service import _count_map, _hydrate_user_likes, build_feed, invalidate_feed_cache
+from app.services.reel_lifecycle_service import (
+    GRACE_PERIOD,
+    _set_expiry,
+    as_aware,
+    live_offer_clause,
+    max_validity_days,
+    utcnow,
+)
+from app.services.subscription_service import ensure_active_subscription
 
 router = APIRouter()
 
@@ -238,7 +248,9 @@ async def update_reel(
     merchant = ctx.merchant
     reel = (
         await db.execute(
-            select(Reel).where(Reel.id == reel_id, Reel.merchant_id == merchant.id)
+            select(Reel)
+            .options(selectinload(Reel.coupon_template), selectinload(Reel.merchant))
+            .where(Reel.id == reel_id, Reel.merchant_id == merchant.id)
         )
     ).scalars().first()
     if not reel:
@@ -248,12 +260,106 @@ async def update_reel(
             status_code=status.HTTP_410_GONE, detail="Reel has been deactivated."
         )
 
-    for field, value in request.model_dump(exclude_unset=True).items():
-        setattr(reel, field, value)
+    updates = request.model_dump(exclude_unset=True)
+    coupon = reel.coupon_template
+
+    # 1. Update reel direct attributes
+    for field in ("title", "video_url", "video_hls_url", "thumbnail_url", "allow_comments"):
+        if field in updates and updates[field] is not None:
+            setattr(reel, field, updates[field])
+
+    if "caption" in updates and updates["caption"] and not updates.get("title"):
+        reel.title = updates["caption"]
+
+    # Keep coupon title aligned with reel title if provided
+    active_title = updates.get("title") or updates.get("caption")
+    if active_title and coupon:
+        coupon.title = active_title
+
+    # 2. Update coupon template attributes
+    if coupon:
+        if "discount_value" in updates and updates["discount_value"] is not None:
+            coupon.discount_value = updates["discount_value"]
+        if "discount_type" in updates and updates["discount_type"] is not None:
+            try:
+                coupon.discount_type = DiscountType(updates["discount_type"])
+            except ValueError:
+                coupon.discount_type = DiscountType.PERCENTAGE
+        if "min_order_amount" in updates and updates["min_order_amount"] is not None:
+            coupon.min_order_amount = updates["min_order_amount"]
+        if "terms" in updates and updates["terms"] is not None:
+            coupon.terms = updates["terms"]
+
+    # 3. Handle offer expiry date extension if provided
+    if "expires_at" in updates and updates["expires_at"] is not None:
+        now = utcnow()
+        req_expiry = updates["expires_at"]
+        if req_expiry.tzinfo is None:
+            req_expiry = req_expiry.replace(tzinfo=IST)
+        else:
+            req_expiry = req_expiry.astimezone(IST)
+
+        current_exp = as_aware(reel.expires_at)
+        is_same_expiry = current_exp is not None and abs((req_expiry - current_exp).total_seconds()) <= 60
+
+        if not is_same_expiry:
+            ensure_active_subscription(merchant)
+            grace_end = as_aware(reel.grace_period_until)
+            if grace_end is not None and now >= grace_end:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="The 24-hour window to extend this offer has closed.",
+                )
+
+            if req_expiry <= now:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="New expiry date must be in the future.",
+                )
+
+            if current_exp is not None and req_expiry < current_exp:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="The new expiry date must be later than the current expiry date.",
+                )
+
+            max_days = max_validity_days(merchant.sector)
+            max_allowed = now + timedelta(days=max_days)
+            if req_expiry > max_allowed + timedelta(hours=1):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Expiry date cannot exceed maximum validity of {max_days} days for your business category.",
+                )
+
+            _set_expiry(reel, coupon, req_expiry)
+            if coupon:
+                diff_days = max(1, (req_expiry.date() - now.date()).days)
+                coupon.validity_days = min(diff_days, max_days)
+
     await db.flush()
     await db.refresh(reel)
+    if coupon:
+        await db.refresh(coupon)
+    await invalidate_feed_cache()
+
     payload = ReelManagementOut.model_validate(reel)
     payload.status = getattr(reel.status, "value", str(reel.status))
+    if reel.merchant:
+        payload.merchant_name = reel.merchant.business_name
+        payload.sector = getattr(reel.merchant.sector, "value", str(reel.merchant.sector))
+        payload.city = reel.merchant.city
+        payload.is_verified = bool(reel.merchant.kyc_status == KycStatus.APPROVED)
+    if coupon and coupon.is_active:
+        payload.coupon = CouponFeedSummary(
+            id=coupon.id,
+            title=coupon.title,
+            discount_type=getattr(coupon.discount_type, "value", str(coupon.discount_type)),
+            discount_value=float(coupon.discount_value),
+            min_order_amount=float(coupon.min_order_amount),
+            validity_days=coupon.validity_days,
+            expires_at=coupon.expires_at,
+            terms=coupon.terms,
+        )
     return ResponseEnvelope(data=payload, message="Reel updated successfully.")
 
 

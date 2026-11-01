@@ -20,15 +20,12 @@ from app.models.reel import Reel
 from app.models.user import User
 from app.schemas.common import ResponseEnvelope
 from app.schemas.coupon import (
-    MerchantRedemptionItem,
-    PinRedemptionRequest,
-    RedemptionHistoryItem,
-    RedemptionPreviewRequest,
-    RedemptionPreviewResponse,
-    RedemptionVerifyRequest,
-    RedemptionVerifyResponse,
+    MerchantRedemptionItem, PinRedemptionRequest, RedemptionHistoryItem,
+    RedemptionPreviewRequest, RedemptionPreviewResponse,
+    RedemptionVerifyRequest, RedemptionVerifyResponse,
 )
 from app.services.redemption_alerts import announce_redemption
+from app.services.redemption_ledger_service import record_and_announce_redemption
 from app.services.redemption_service import RedemptionService
 from app.services.totp import TotpService
 from app.utils.geo import calculate_haversine_distance
@@ -38,17 +35,32 @@ security_bearer = HTTPBearer(auto_error=False)
 
 
 async def get_staff_context(
-    credentials: Optional[HTTPAuthorizationCredentials],
-) -> Tuple[uuid.UUID, uuid.UUID]:
+    credentials: Annotated[Optional[HTTPAuthorizationCredentials], Depends(security_bearer)],
+    db: AsyncSession = Depends(get_db),
+) -> Tuple[uuid.UUID, Optional[uuid.UUID]]:
     if not credentials:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Staff POS authentication required.")
     token_data = decode_access_token(credentials.credentials)
-    if not token_data or token_data.get("role") != "ROLE_CASHIER":
+    if not token_data:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only authorized merchant staff can redeem.")
-    try:
-        return uuid.UUID(token_data["merchant_id"]), uuid.UUID(token_data["sub"])
-    except (KeyError, ValueError, TypeError):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid staff authentication claims.")
+    role = token_data.get("role")
+    if role in ("ROLE_CASHIER", "CASHIER"):
+        try:
+            return uuid.UUID(token_data["merchant_id"]), uuid.UUID(token_data["sub"])
+        except (KeyError, ValueError, TypeError):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid staff authentication claims.")
+    elif role in ("MERCHANT", "ROLE_MERCHANT"):
+        try:
+            user_id = uuid.UUID(token_data["sub"])
+        except (KeyError, ValueError, TypeError):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid merchant authentication claims.")
+        merch_res = await db.execute(select(Merchant).where(Merchant.user_id == user_id))
+        merchant = merch_res.scalars().first()
+        if not merchant:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Merchant profile not found for user.")
+        return merchant.id, None
+    else:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only authorized merchant staff or merchants can redeem.")
 
 
 @router.post("/redemptions/preview", response_model=ResponseEnvelope[RedemptionPreviewResponse])
@@ -61,7 +73,7 @@ async def preview_qr_coupon(
     Cashier terminal scans customer's dynamic QR code.
     Pre-validates store ownership, expiration, and fresh TOTP before asking cashier for bill amount.
     """
-    staff_merchant_id, _ = await get_staff_context(credentials)
+    staff_merchant_id, _ = await get_staff_context(credentials, db)
     coupon, _ = await RedemptionService.validate_qr_for_staff(db, request.qr_payload, staff_merchant_id)
 
     discount_type = (
@@ -69,6 +81,8 @@ async def preview_qr_coupon(
         if hasattr(coupon.template.discount_type, "value")
         else str(coupon.template.discount_type)
     )
+
+    session_token = RedemptionService.create_redemption_session(coupon.id, staff_merchant_id)
 
     return ResponseEnvelope(
         data=RedemptionPreviewResponse(
@@ -79,6 +93,7 @@ async def preview_qr_coupon(
             min_order_amount=float(coupon.template.min_order_amount),
             customer_name=coupon.user.full_name or coupon.user.phone,
             customer_phone=coupon.user.phone,
+            session_token=session_token,
         ),
         message="Voucher verified successfully for this store.",
     )
@@ -94,8 +109,19 @@ async def verify_and_redeem(
     Cashier POS terminal scans customer's dynamic QR code.
     Verifies TOTP token, checks store geofence, and records redemption in the ledger.
     """
-    staff_merchant_id, staff_id = await get_staff_context(credentials)
-    coupon, totp_token = await RedemptionService.validate_qr_for_staff(db, request.qr_payload, staff_merchant_id)
+    staff_merchant_id, staff_id = await get_staff_context(credentials, db)
+    session_tok = request.session_token.strip() if request.session_token else None
+    qr_pay = request.qr_payload.strip() if request.qr_payload else None
+
+    if session_tok:
+        coupon = await RedemptionService.validate_session_token(db, session_tok, staff_merchant_id)
+    elif qr_pay:
+        coupon, _ = await RedemptionService.validate_qr_for_staff(db, qr_pay, staff_merchant_id)
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Either session_token or qr_payload must be provided.",
+        )
 
     if request.bill_amount < float(coupon.template.min_order_amount):
         raise HTTPException(
@@ -138,43 +164,17 @@ async def verify_and_redeem(
             detail="This coupon has already been redeemed.",
         )
 
-    discount_type = coupon.template.discount_type.value if hasattr(coupon.template.discount_type, "value") else str(coupon.template.discount_type)
-    discount_applied = RedemptionService.calculate_discount(
-        discount_type,
-        float(coupon.template.discount_value),
-        request.bill_amount,
-    )
-    ledger_entry = RedemptionsLedger(
-        user_coupon_id=coupon.id,
-        merchant_id=staff_merchant_id,
+    return await record_and_announce_redemption(
+        db,
+        coupon=coupon,
+        staff_merchant_id=staff_merchant_id,
         staff_id=staff_id,
         bill_amount=request.bill_amount,
-        discount_applied=discount_applied,
-        cashier_latitude=request.cashier_lat,
-        cashier_longitude=request.cashier_lon,
-        distance_from_shop_m=distance_offset,
-        created_at=now
-    )
-    db.add(ledger_entry)
-    await db.flush()
-
-    customer_name = coupon.user.full_name or coupon.user.phone
-    await announce_redemption(
-        db, coupon=coupon, ledger=ledger_entry, merchant_id=staff_merchant_id, method="QR"
-    )
-
-    return ResponseEnvelope(
-        data=RedemptionVerifyResponse(
-            redemption_id=ledger_entry.id,
-            status="VERIFIED_AND_REDEEMED",
-            discount_applied=float(ledger_entry.discount_applied),
-            customer_name=customer_name,
-            customer_phone=coupon.user.phone if coupon.user else None,
-            coupon_title=coupon.template.title,
-            timestamp=now,
-            bill_amount=request.bill_amount,
-        ),
-        message="Coupon successfully verified and redeemed!"
+        cashier_lat=request.cashier_lat,
+        cashier_lon=request.cashier_lon,
+        distance_offset=distance_offset,
+        method="QR",
+        success_message="Coupon successfully verified and redeemed!",
     )
 
 
@@ -184,7 +184,7 @@ async def verify_backup_pin(
     credentials: Annotated[Optional[HTTPAuthorizationCredentials], Depends(security_bearer)],
     db: AsyncSession = Depends(get_db),
 ):
-    staff_merchant_id, staff_id = await get_staff_context(credentials)
+    staff_merchant_id, staff_id = await get_staff_context(credentials, db)
     await RedemptionService.check_pin_rate_limit(staff_id, request.user_coupon_id)
 
     result = await db.execute(
@@ -239,35 +239,17 @@ async def verify_backup_pin(
             detail="This coupon has already been redeemed.",
         )
 
-    discount_type = coupon.template.discount_type.value if hasattr(coupon.template.discount_type, "value") else str(coupon.template.discount_type)
-    discount = RedemptionService.calculate_discount(discount_type, float(coupon.template.discount_value), request.bill_amount)
-    ledger = RedemptionsLedger(
-        user_coupon_id=coupon.id,
-        merchant_id=staff_merchant_id,
+    return await record_and_announce_redemption(
+        db,
+        coupon=coupon,
+        staff_merchant_id=staff_merchant_id,
         staff_id=staff_id,
         bill_amount=request.bill_amount,
-        discount_applied=discount,
-        cashier_latitude=request.cashier_lat,
-        cashier_longitude=request.cashier_lon,
-        created_at=now,
-    )
-    db.add(ledger)
-    await db.flush()
-    await announce_redemption(
-        db, coupon=coupon, ledger=ledger, merchant_id=staff_merchant_id, method="BACKUP_PIN"
-    )
-    return ResponseEnvelope(
-        data=RedemptionVerifyResponse(
-            redemption_id=ledger.id,
-            status="VERIFIED_AND_REDEEMED",
-            discount_applied=discount,
-            customer_name=coupon.user.full_name or coupon.user.phone,
-            customer_phone=coupon.user.phone if coupon.user else None,
-            coupon_title=coupon.template.title,
-            timestamp=now,
-            bill_amount=request.bill_amount,
-        ),
-        message="Coupon successfully verified and redeemed with backup PIN.",
+        cashier_lat=request.cashier_lat,
+        cashier_lon=request.cashier_lon,
+        distance_offset=None,
+        method="BACKUP_PIN",
+        success_message="Coupon successfully verified and redeemed with backup PIN.",
     )
 
 
@@ -296,13 +278,9 @@ async def merchant_redemption_history(
     rows = (await db.execute(stmt)).all()
     return ResponseEnvelope(data=[
         MerchantRedemptionItem(
-            redemption_id=ledger.id,
-            coupon_id=coupon.id,
-            coupon_title=template.title,
-            shopper_name=user.full_name or user.phone,
-            bill_amount=float(ledger.bill_amount),
-            discount_applied=float(ledger.discount_applied),
-            staff_id=ledger.staff_id,
+            redemption_id=ledger.id, coupon_id=coupon.id, coupon_title=template.title,
+            shopper_name=user.full_name or user.phone, bill_amount=float(ledger.bill_amount),
+            discount_applied=float(ledger.discount_applied), staff_id=ledger.staff_id,
             created_at=ledger.created_at,
         )
         for ledger, coupon, template, user in rows
@@ -369,16 +347,12 @@ async def shopper_redemption_history(
     rows = (await db.execute(stmt)).all()
     return ResponseEnvelope(data=[
         RedemptionHistoryItem(
-            redemption_id=ledger.id,
-            coupon_id=coupon.id,
-            coupon_title=template.title,
-            merchant_id=merchant.id,
-            merchant_name=merchant.business_name,
+            redemption_id=ledger.id, coupon_id=coupon.id, coupon_title=template.title,
+            merchant_id=merchant.id, merchant_name=merchant.business_name,
             merchant_is_verified=bool(merchant.kyc_status == KycStatus.APPROVED),
             staff_name=staff.staff_name if staff else None,
             discount_type=template.discount_type.value if hasattr(template.discount_type, "value") else str(template.discount_type),
-            bill_amount=float(ledger.bill_amount),
-            discount_applied=float(ledger.discount_applied),
+            bill_amount=float(ledger.bill_amount), discount_applied=float(ledger.discount_applied),
             created_at=ledger.created_at,
         )
         for ledger, coupon, template, merchant, staff in rows

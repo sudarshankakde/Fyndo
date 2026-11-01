@@ -104,27 +104,13 @@
         {% endif %}
 
         {% if status_val == 'PENDING_MODERATION' or status_val == 'APPROVED' %}
-        <details style="font-size: 12px;">
-          <summary style="cursor: pointer; color: var(--danger); font-weight: 600; padding: 4px 0;">
-            ✕ Reject Reel...
-          </summary>
-          <form method="post" action="/admin/moderation/reels/{{ reel.id }}/reject" style="margin-top: 8px; display: flex; flex-direction: column; gap: 6px;">
-            <select name="preset_reason" class="input" style="font-size: 12px; padding: 6px 8px;"
-                    onchange="if(this.value){ document.getElementById('reason-{{ reel.id }}').value = this.value; }">
-              <option value="">Select standard rejection reason...</option>
-              <option value="Violated content or audio guidelines">Violated content or audio guidelines</option>
-              <option value="Copyrighted audio detected without commercial rights">Copyrighted audio detected without rights</option>
-              <option value="Inappropriate or low-quality video resolution">Inappropriate or low-quality video</option>
-              <option value="Misleading coupon offer or invalid pricing terms">Misleading coupon offer or terms</option>
-              <option value="Duplicate or spam promotion">Duplicate or spam promotion</option>
-            </select>
-            <input type="text" id="reason-{{ reel.id }}" name="rejection_reason" placeholder="Specific rejection reason..."
-                   class="input" style="font-size: 12px; padding: 6px 8px;" required>
-            <button type="submit" class="btn btn-danger" style="width: 100%;">
-              Confirm Rejection
-            </button>
-          </form>
-        </details>
+        <form method="post" action="/admin/moderation/reels/{{ reel.id }}/reject" style="margin-top: 4px; display: flex; flex-direction: column; gap: 6px;">
+          <input type="text" name="rejection_reason" placeholder="Enter reason for rejection visible to merchant..."
+                 class="input" style="font-size: 12px; padding: 6px 8px; width: 100%;" required>
+          <button type="submit" class="btn btn-danger" style="width: 100%; padding: 6px; font-size: 12px;">
+            ✕ Reject Reel
+          </button>
+        </form>
         {% endif %}
       </div>
     </div>

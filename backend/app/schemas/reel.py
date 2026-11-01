@@ -178,10 +178,28 @@ class ReelManagementOut(BaseModel):
 
 class ReelUpdateRequest(BaseModel):
     title: Optional[str] = Field(None, min_length=3, max_length=150)
+    caption: Optional[str] = Field(None, min_length=3, max_length=150)
     video_url: Optional[str] = Field(None, min_length=5)
     video_hls_url: Optional[str] = Field(None, min_length=5)
     thumbnail_url: Optional[str] = Field(None, min_length=5)
     allow_comments: Optional[bool] = None
+    discount_value: Optional[float] = Field(None, gt=0)
+    discount_type: Optional[str] = None
+    min_order_amount: Optional[float] = Field(None, ge=0)
+    terms: Optional[str] = None
+    expires_at: Optional[datetime] = None
+
+    @field_validator("discount_type")
+    @classmethod
+    def validate_discount_type(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        val = v.upper()
+        if val in {"FLAT", "FLAT_AMOUNT"}:
+            return "FLAT_AMOUNT"
+        if val in {"PERCENTAGE", "BOGO"}:
+            return val
+        return "PERCENTAGE"
 
 
 class ReelExtendRequest(BaseModel):

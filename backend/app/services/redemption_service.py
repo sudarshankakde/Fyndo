@@ -1,6 +1,6 @@
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Tuple
 from fastapi import HTTPException, status
 from sqlalchemy import select
@@ -8,12 +8,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 import pyotp
+import jwt
 
+from app.core.config import settings
 from app.core.redis import get_redis_client
+from app.core.security import create_access_token
 from app.models.coupon import CouponStatus, CouponTemplate, DiscountType, UserCoupon
 from app.models.merchant import Merchant
 from app.services.totp import TotpService
-
 
 class RedemptionService:
     @staticmethod
@@ -23,9 +25,10 @@ class RedemptionService:
         return round(min(bill_amount, discount_value), 2)
 
     @staticmethod
-    async def check_pin_rate_limit(staff_id: uuid.UUID, coupon_id: uuid.UUID) -> None:
+    async def check_pin_rate_limit(staff_id: Optional[uuid.UUID], coupon_id: uuid.UUID) -> None:
         redis = await get_redis_client()
-        key = f"rate:backup-pin:{staff_id}:{coupon_id}"
+        identifier = str(staff_id) if staff_id else "owner"
+        key = f"rate:backup-pin:{identifier}:{coupon_id}"
         attempts = await redis.incr(key)
         if attempts == 1:
             await redis.expire(key, 600)
@@ -33,6 +36,121 @@ class RedemptionService:
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 detail="Too many backup PIN attempts. Please wait 10 minutes.",
+            )
+
+    @staticmethod
+    def create_redemption_session(coupon_id: uuid.UUID, merchant_id: uuid.UUID) -> str:
+        return create_access_token(
+            subject=str(coupon_id),
+            role="redemption_session",
+            extra_claims={
+                "token_type": "redemption_session",
+                "claim_id": str(coupon_id),
+                "merchant_id": str(merchant_id),
+            },
+            expires_delta=timedelta(minutes=10),
+        )
+
+    @staticmethod
+    async def validate_session_token(
+        db: AsyncSession,
+        session_token: str,
+        staff_merchant_id: uuid.UUID,
+    ) -> UserCoupon:
+        try:
+            token_data = jwt.decode(
+                session_token,
+                settings.JWT_ACCESS_SECRET,
+                algorithms=[settings.JWT_ALGORITHM],
+            )
+        except jwt.ExpiredSignatureError:
+            raise HTTPException(
+                status_code=status.HTTP_410_GONE,
+                detail="Redemption session has expired (10-minute timeout). Please scan the QR code again.",
+            )
+        except jwt.PyJWTError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid or malformed redemption session. Please scan the QR code again.",
+            )
+
+        if token_data.get("token_type") != "redemption_session":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid redemption session token type.",
+            )
+        try:
+            token_merchant_id = uuid.UUID(str(token_data.get("merchant_id")))
+            claim_id = uuid.UUID(str(token_data.get("claim_id") or token_data.get("sub")))
+        except (ValueError, TypeError):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Malformed redemption session token.",
+            )
+
+        if token_merchant_id != staff_merchant_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Redemption session belongs to a different merchant.",
+            )
+
+        stmt = (
+            select(UserCoupon)
+            .options(selectinload(UserCoupon.template), selectinload(UserCoupon.user))
+            .where(UserCoupon.id == claim_id)
+        )
+        res = await db.execute(stmt)
+        coupon = res.scalars().first()
+        if not coupon:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Coupon claim record not found.",
+            )
+
+        await RedemptionService._verify_coupon_state(db, coupon, staff_merchant_id)
+        return coupon
+
+    @staticmethod
+    async def _verify_coupon_state(
+        db: AsyncSession,
+        coupon: UserCoupon,
+        staff_merchant_id: uuid.UUID,
+    ) -> None:
+        c_status = coupon.status.value if hasattr(coupon.status, "value") else str(coupon.status)
+        if c_status == "REDEEMED":
+            redeemed_time = coupon.redeemed_at.strftime("%I:%M %p") if coupon.redeemed_at else "earlier"
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"This voucher was already redeemed at {redeemed_time}.",
+            )
+        if c_status != "CLAIMED":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Coupon is no longer redeemable.",
+            )
+
+        exp = (
+            coupon.expires_at.replace(tzinfo=timezone.utc)
+            if coupon.expires_at.tzinfo is None
+            else coupon.expires_at
+        )
+        if exp < datetime.now(timezone.utc):
+            coupon.status = CouponStatus.EXPIRED
+            await db.flush()
+            raise HTTPException(
+                status_code=status.HTTP_410_GONE,
+                detail="This coupon has expired.",
+            )
+
+        if coupon.template.merchant_id != staff_merchant_id:
+            merch_res = await db.execute(
+                select(Merchant).where(Merchant.id == coupon.template.merchant_id)
+            )
+            other_merch = merch_res.scalars().first()
+            shop_name = other_merch.business_name if other_merch else "another store"
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Wrong Store: This coupon belongs to '{shop_name}', not your store.",
             )
 
     @staticmethod
@@ -177,40 +295,5 @@ class RedemptionService:
                     detail="Invalid or expired customer pass code. Please ask the customer to refresh their screen.",
                 )
 
-        # Common validations
-        c_status = coupon.status.value if hasattr(coupon.status, "value") else str(coupon.status)
-        if c_status == "REDEEMED":
-            redeemed_time = (
-                coupon.redeemed_at.strftime("%I:%M %p") if coupon.redeemed_at else "earlier"
-            )
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=f"This voucher was already redeemed at {redeemed_time}.",
-            )
-
-        exp = (
-            coupon.expires_at.replace(tzinfo=timezone.utc)
-            if coupon.expires_at.tzinfo is None
-            else coupon.expires_at
-        )
-        if exp < datetime.now(timezone.utc):
-            coupon.status = CouponStatus.EXPIRED
-            await db.flush()
-            raise HTTPException(
-                status_code=status.HTTP_410_GONE,
-                detail="This coupon has expired.",
-            )
-
-        # Check store ownership
-        if coupon.template.merchant_id != staff_merchant_id:
-            merch_res = await db.execute(
-                select(Merchant).where(Merchant.id == coupon.template.merchant_id)
-            )
-            other_merch = merch_res.scalars().first()
-            shop_name = other_merch.business_name if other_merch else "another store"
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Wrong Store: This coupon belongs to '{shop_name}', not your store.",
-            )
-
+        await RedemptionService._verify_coupon_state(db, coupon, staff_merchant_id)
         return coupon, totp_token

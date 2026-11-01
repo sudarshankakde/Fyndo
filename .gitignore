@@ -152,3 +152,20 @@ dump.rdb
 docs/_build/
 docs/site/
 site/
+
+# --- AI & Agent Tooling ---------------------------------------
+.agent/
+.agents/
+.gemini/
+.claude/
+.cursor/
+.windsurf/
+.cline/
+.roo/
+.copilot/
+.chat/
+.history/
+.system_generated/
+.kilo/
+brain/
+scratch/

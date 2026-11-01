@@ -19,7 +19,8 @@ class DynamicQrResponse(BaseModel):
 
 
 class RedemptionVerifyRequest(BaseModel):
-    qr_payload: str
+    qr_payload: Optional[str] = None
+    session_token: Optional[str] = None
     bill_amount: float = Field(..., gt=0)
     cashier_lat: Optional[float] = None
     cashier_lon: Optional[float] = None
@@ -113,3 +114,4 @@ class RedemptionPreviewResponse(BaseModel):
     min_order_amount: float
     customer_name: Optional[str] = None
     customer_phone: Optional[str] = None
+    session_token: Optional[str] = None

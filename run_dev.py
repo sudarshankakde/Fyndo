@@ -12,11 +12,49 @@ if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 ROOT_DIR = Path(__file__).parent.resolve()
-BACKEND_DIR = ROOT_DIR / "backend"
+def find_backend_dir() -> Path:
+    """Locates the backend directory containing the FastAPI app."""
+    candidates = [
+        ROOT_DIR / "backend",
+        ROOT_DIR,
+        ROOT_DIR.parent / "backend",
+    ]
+    for c in candidates:
+        if c.is_dir() and (c / "app" / "main.py").exists():
+            return c
+    return ROOT_DIR / "backend"
 
-# Locate frontend: prioritizes sibling Fyndo-Frontend repo, falls back to local frontend
-SIBLING_FRONTEND = ROOT_DIR.parent / "Fyndo-Frontend"
-FRONTEND_DIR = SIBLING_FRONTEND if SIBLING_FRONTEND.exists() else (ROOT_DIR / "frontend")
+
+BACKEND_DIR = find_backend_dir()
+
+
+def find_frontend_dir() -> Path | None:
+    """Locates the frontend directory across candidate paths or env override."""
+    if "--backend-only" in sys.argv or "--no-frontend" in sys.argv or os.environ.get("SKIP_FRONTEND") == "1":
+        return None
+
+    env_dir = os.environ.get("FRONTEND_DIR")
+    if env_dir:
+        p = Path(env_dir).resolve()
+        if p.is_dir():
+            return p
+
+    candidates = [
+        ROOT_DIR.parent / "frontend",
+        ROOT_DIR / "frontend",
+        ROOT_DIR.parent / "Fyndo-Frontend",
+    ]
+    for c in candidates:
+        if c.is_dir() and (c / "package.json").exists():
+            return c
+    for c in candidates:
+        if c.is_dir():
+            return c
+    return None
+
+
+# Locate frontend: checks parent/frontend, local frontend, and sibling repo
+FRONTEND_DIR = find_frontend_dir()
 
 
 def find_backend_python():
@@ -47,14 +85,32 @@ def stream_logs(pipe, prefix, color_code):
 
 
 def main():
+    if "--help" in sys.argv or "-h" in sys.argv:
+        print("Usage: python run_dev.py [--backend-only | --no-frontend]")
+        return
+
+    frontend_dir = find_frontend_dir()
+    backend_dir = find_backend_dir()
+
     print("\n" + "=" * 62)
     print(" [*] Starting Fyndo Platform Services (Backend + Frontend)")
     print("=" * 62)
     print(" -> Backend API  : http://localhost:5000 (Swagger: http://localhost:5000/docs)")
-    print(" -> Frontend App : http://localhost:3000")
+    if frontend_dir and frontend_dir.is_dir():
+        print(f" -> Frontend App : http://localhost:3000 ({frontend_dir})")
+    else:
+        print(" -> Frontend App : [Not found / Skipped - backend only mode]")
     print(" Press Ctrl+C anytime to stop all services.\n" + "-" * 62)
 
     py_exe = find_backend_python()
+    if not Path(py_exe).exists():
+        print(f"[!] Error: Backend Python executable not found at {py_exe}")
+        sys.exit(1)
+
+    if not backend_dir.is_dir():
+        print(f"[!] Error: Backend directory not found at {backend_dir}")
+        sys.exit(1)
+
     backend_cmd = [py_exe, "-m", "uvicorn", "app.main:app", "--reload", "--host", "0.0.0.0", "--port", "5000"]
 
     # Windows requires shell=True for npm/bat
@@ -68,7 +124,7 @@ def main():
     # Start Backend
     backend_proc = subprocess.Popen(
         backend_cmd,
-        cwd=str(BACKEND_DIR),
+        cwd=str(backend_dir),
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
@@ -78,18 +134,24 @@ def main():
         errors="replace"
     )
 
-    # Start Frontend
-    frontend_proc = subprocess.Popen(
-        npm_cmd,
-        cwd=str(FRONTEND_DIR),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        bufsize=1,
-        shell=use_shell,
-        encoding="utf-8",
-        errors="replace"
-    )
+    # Start Frontend (if directory exists and npm starts successfully)
+    frontend_proc = None
+    if frontend_dir and frontend_dir.is_dir():
+        try:
+            frontend_proc = subprocess.Popen(
+                npm_cmd,
+                cwd=str(frontend_dir),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+                shell=use_shell,
+                encoding="utf-8",
+                errors="replace"
+            )
+        except Exception as e:
+            print(f"[!] Warning: Could not start frontend dev server: {e}")
+            frontend_proc = None
 
     # Background threads for log streaming with ANSI colors
     t1 = threading.Thread(
@@ -97,23 +159,33 @@ def main():
         args=(backend_proc.stdout, "[BACKEND ]", "\033[34m"),
         daemon=True
     )
-    t2 = threading.Thread(
-        target=stream_logs,
-        args=(frontend_proc.stdout, "[FRONTEND]", "\033[32m"),
-        daemon=True
-    )
     t1.start()
-    t2.start()
+
+    if frontend_proc and frontend_proc.stdout:
+        t2 = threading.Thread(
+            target=stream_logs,
+            args=(frontend_proc.stdout, "[FRONTEND]", "\033[32m"),
+            daemon=True
+        )
+        t2.start()
 
     def shutdown(signum=None, frame=None):
         print("\n\n[!] Shutting down Fyndo services...")
         try:
-            if sys.platform == "win32":
-                subprocess.call(["taskkill", "/F", "/T", "/PID", str(backend_proc.pid)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                subprocess.call(["taskkill", "/F", "/T", "/PID", str(frontend_proc.pid)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            else:
-                backend_proc.terminate()
-                frontend_proc.terminate()
+            if backend_proc and backend_proc.poll() is None:
+                if sys.platform == "win32":
+                    subprocess.call(["taskkill", "/F", "/T", "/PID", str(backend_proc.pid)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                else:
+                    backend_proc.terminate()
+        except Exception:
+            pass
+
+        try:
+            if frontend_proc and frontend_proc.poll() is None:
+                if sys.platform == "win32":
+                    subprocess.call(["taskkill", "/F", "/T", "/PID", str(frontend_proc.pid)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                else:
+                    frontend_proc.terminate()
         except Exception:
             pass
         print("[+] All services stopped.")
@@ -125,8 +197,14 @@ def main():
     # Wait for any process to exit
     while True:
         b_poll = backend_proc.poll()
-        f_poll = frontend_proc.poll()
-        if b_poll is not None or f_poll is not None:
+        f_poll = frontend_proc.poll() if frontend_proc else None
+        if b_poll is not None:
+            if b_poll != 0:
+                print(f"\n[!] Backend exited with code {b_poll}.")
+            shutdown()
+        if frontend_proc and f_poll is not None:
+            if f_poll != 0:
+                print(f"\n[!] Frontend exited with code {f_poll}.")
             shutdown()
         try:
             threading.Event().wait(1)

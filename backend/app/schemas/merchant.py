@@ -12,8 +12,10 @@ class MerchantOnboardRequest(BaseModel):
     city: str = Field(..., description="Nagpur, Mumbai, etc.")
     latitude: float = Field(..., ge=-90.0, le=90.0)
     longitude: float = Field(..., ge=-180.0, le=180.0)
-    gstin: Optional[str] = None
-    kyc_doc_url: str = Field(..., min_length=10)
+    gstin: Optional[str] = Field(None, max_length=20)
+    shop_act: Optional[str] = Field(None, max_length=50)
+    udyam: Optional[str] = Field(None, max_length=50)
+    kyc_doc_url: str = Field(..., min_length=5)
     cover_url: Optional[str] = None
     logo_url: Optional[str] = None
     description: Optional[str] = None
@@ -26,6 +28,37 @@ class MerchantOnboardRequest(BaseModel):
         if normalized not in VALID_SECTORS and v.upper() not in VALID_SECTORS:
             raise ValueError(f"Invalid sector: {v}")
         return v.upper()
+
+    @field_validator("shop_act", "udyam")
+    @classmethod
+    def validate_optional_alphanumeric(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        v = v.strip()
+        if not v:
+            return None
+        import re
+        if not re.match(r"^[A-Za-z0-9\-\/\s]+$", v):
+            raise ValueError("Must contain only letters, numbers, hyphens, and slashes.")
+        return v
+
+    @field_validator("kyc_doc_url")
+    @classmethod
+    def validate_kyc_doc_url(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("KYC document URL is required.")
+        if v.startswith("["):
+            try:
+                parsed = json.loads(v)
+                if isinstance(parsed, list):
+                    if len(parsed) == 0:
+                        raise ValueError("At least one KYC document must be attached.")
+                    if len(parsed) > 3:
+                        raise ValueError("At most 3 KYC documents can be uploaded.")
+            except json.JSONDecodeError:
+                raise ValueError("Invalid KYC documents format.")
+        return v
 
 
 class CategoryMetaOut(BaseModel):
@@ -48,6 +81,8 @@ class MerchantOut(BaseModel):
     longitude: float
     kyc_status: str
     gstin: Optional[str] = None
+    shop_act: Optional[str] = None
+    udyam: Optional[str] = None
     kyc_doc_url: Optional[str] = None
     kyc_rejection_reason: Optional[str] = None
     profile_video_url: Optional[str] = None
@@ -142,6 +177,8 @@ class MerchantProfileUpdateRequest(BaseModel):
     latitude: Optional[float] = Field(None, ge=-90.0, le=90.0)
     longitude: Optional[float] = Field(None, ge=-180.0, le=180.0)
     gstin: Optional[str] = Field(None, max_length=20)
+    shop_act: Optional[str] = Field(None, max_length=50)
+    udyam: Optional[str] = Field(None, max_length=50)
     cover_url: Optional[str] = None
     logo_url: Optional[str] = None
     description: Optional[str] = None
@@ -158,6 +195,8 @@ class MerchantKycResubmissionRequest(BaseModel):
     latitude: Optional[float] = Field(None, ge=-90.0, le=90.0)
     longitude: Optional[float] = Field(None, ge=-180.0, le=180.0)
     gstin: Optional[str] = Field(None, max_length=20)
+    shop_act: Optional[str] = Field(None, max_length=50)
+    udyam: Optional[str] = Field(None, max_length=50)
     kyc_doc_url: Optional[str] = Field(None, min_length=10)
 
 
@@ -229,8 +268,23 @@ class MerchantDraftSaveRequest(BaseModel):
     pincode: Optional[str] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
-    gstin: Optional[str] = None
+    gstin: Optional[str] = Field(None, max_length=20)
+    shop_act: Optional[str] = Field(None, max_length=50)
+    udyam: Optional[str] = Field(None, max_length=50)
     kyc_doc_url: Optional[str] = None
+
+    @field_validator("shop_act", "udyam")
+    @classmethod
+    def validate_draft_alphanumeric(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        v = v.strip()
+        if not v:
+            return None
+        import re
+        if not re.match(r"^[A-Za-z0-9\-\/\s]+$", v):
+            raise ValueError("Must contain only letters, numbers, hyphens, and slashes.")
+        return v
 
 
 class MerchantDraftOut(BaseModel):
@@ -245,6 +299,8 @@ class MerchantDraftOut(BaseModel):
     latitude: Optional[float] = None
     longitude: Optional[float] = None
     gstin: Optional[str] = None
+    shop_act: Optional[str] = None
+    udyam: Optional[str] = None
     kyc_doc_url: Optional[str] = None
     updated_at: Optional[datetime] = None
 

@@ -3,7 +3,7 @@ import uuid
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from app.admin.deps import issue_session
 from app.core.database import async_session_factory
@@ -87,6 +87,15 @@ async def test_broadcast_send_to_merchants(client: AsyncClient):
         assert audit is not None
         assert audit.target_id == "MERCHANT"
 
+        # Cleanup test notifications and audit records so they never pollute merchant accounts
+        await s.execute(
+            delete(Notification).where(Notification.title == "Merchant Platform Update")
+        )
+        await s.execute(
+            delete(AuditLog).where(AuditLog.action == "notification.broadcast")
+        )
+        await s.commit()
+
 
 @pytest.mark.asyncio
 async def test_broadcast_send_to_single_user_by_uuid(client: AsyncClient):
@@ -124,6 +133,15 @@ async def test_broadcast_send_to_single_user_by_uuid(client: AsyncClient):
         assert notif.category == "DEALS"
         assert notif.action_type == "screen"
         assert notif.action_ref == "Wallet"
+
+        # Cleanup test notification
+        await s.execute(
+            delete(Notification).where(
+                Notification.user_id == target_uid,
+                Notification.title == "Exclusive Flash Deal For You",
+            )
+        )
+        await s.commit()
 
 
 @pytest.mark.asyncio

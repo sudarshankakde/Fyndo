@@ -25,10 +25,12 @@ async def announce_redemption(
     method: str,
 ) -> None:
     """Audit-logs the redemption and alerts the shopper and store that the voucher is used."""
+    actor_role = "ROLE_CASHIER" if ledger.staff_id is not None else "MERCHANT"
+    actor_id = ledger.staff_id if ledger.staff_id is not None else merchant_id
     audit_log(
         "coupon.redeem",
-        actor_id=ledger.staff_id,
-        actor_role="ROLE_CASHIER",
+        actor_id=actor_id,
+        actor_role=actor_role,
         target_type="user_coupon",
         target_id=coupon.id,
         merchant_id=merchant_id,

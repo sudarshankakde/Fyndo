@@ -96,6 +96,7 @@ def _set_expiry(reel: Reel, coupon: Optional[CouponTemplate], expires_at: dateti
     reel.is_expired = False
     if coupon:
         coupon.expires_at = expires_at
+        coupon.is_active = True
 
 
 def extend_offer(
@@ -183,6 +184,9 @@ async def sweep_reels(db: AsyncSession, now: Optional[datetime] = None) -> Dict[
         reel.deleted_at = now
         if reel.coupon_template:
             reel.coupon_template.is_active = False
+
+        _purge_reel_storage_assets(reel)
+
         counts["removed"] += 1
         await _notify_owner(
             db, reel,
@@ -193,6 +197,47 @@ async def sweep_reels(db: AsyncSession, now: Optional[datetime] = None) -> Dict[
 
     await db.flush()
     return counts
+
+
+def _purge_reel_storage_assets(reel: Reel) -> None:
+    """Purges the video and thumbnail assets from Cloudinary storage buckets once grace period expires."""
+    try:
+        from app.services.cloudinary_service import CloudinaryService
+
+        video_pid = getattr(reel, "cloudinary_public_id", None) or (
+            CloudinaryService.extract_public_id(reel.video_url) if reel.video_url else None
+        )
+        if video_pid:
+            CloudinaryService.destroy(video_pid, resource_type="video")
+        elif reel.video_url and "/uploads/" in reel.video_url:
+            _safe_remove_local(reel.video_url)
+
+        if reel.video_hls_url and "/uploads/" in reel.video_hls_url:
+            _safe_remove_local(reel.video_hls_url)
+
+        if reel.thumbnail_url:
+            thumb_pid = CloudinaryService.extract_public_id(reel.thumbnail_url)
+            if thumb_pid:
+                CloudinaryService.destroy(thumb_pid, resource_type="image")
+            elif "/uploads/" in reel.thumbnail_url:
+                _safe_remove_local(reel.thumbnail_url)
+    except Exception as exc:
+        logger.warning(f"Error purging storage assets for reel {reel.id}: {exc}")
+
+
+def _safe_remove_local(url: str) -> None:
+    try:
+        import os
+        upload_idx = url.find("/uploads/")
+        if upload_idx != -1:
+            rel_path = url[upload_idx + 1:]
+            backend_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+            file_path = os.path.join(backend_root, rel_path)
+            if os.path.exists(file_path):
+                os.remove(file_path)
+    except Exception as exc:
+        logger.warning(f"Failed to remove local asset {url}: {exc}")
+
 
 
 async def run_periodic_sweep(interval_seconds: int) -> None:

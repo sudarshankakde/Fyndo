@@ -235,7 +235,9 @@ async def test_cloudinary_video_optimization_and_hls(client: AsyncClient):
     assert hls_from_url == "https://res.cloudinary.com/fyndo/video/upload/sp_auto/v1700000000/fyndo/reels/sample.m3u8"
 
     # Seed a reel with Cloudinary URL and verify /reels/feed emits video_hls_url
-    lat, lon = 21.25, 79.15
+    seed = uuid.uuid4().int
+    lat = round((seed % 160_000_000) / 1_000_000 - 80, 4)
+    lon = round(((seed // 160_000_000) % 340_000_000) / 1_000_000 - 170, 4)
     reel_id = await _seed_reel(
         latitude=lat,
         longitude=lon,

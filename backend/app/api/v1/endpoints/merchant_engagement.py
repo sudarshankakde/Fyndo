@@ -69,10 +69,27 @@ async def update_profile_video(
     db: AsyncSession = Depends(get_db),
 ):
     """Sets the store's permanent showcase video (never expires, unlike reels)."""
+    from app.services.cloudinary_service import CloudinaryService
+
     merchant = await _owned_merchant(db, current_user)
-    merchant.profile_video_url = request.profile_video_url
-    merchant.profile_video_thumbnail_url = request.profile_video_thumbnail_url
+    old_video = merchant.profile_video_url
+    old_thumb = merchant.profile_video_thumbnail_url
+
+    new_video = request.profile_video_url or None
+    new_thumb = request.profile_video_thumbnail_url or None
+    merchant.profile_video_url = new_video
+    merchant.profile_video_thumbnail_url = new_thumb
     await db.flush()
+
+    if old_video and old_video != new_video:
+        old_pid = CloudinaryService.extract_public_id(old_video)
+        if old_pid:
+            CloudinaryService.destroy(old_pid, resource_type="video")
+    if old_thumb and old_thumb != new_thumb:
+        old_thumb_pid = CloudinaryService.extract_public_id(old_thumb)
+        if old_thumb_pid:
+            CloudinaryService.destroy(old_thumb_pid, resource_type="image")
+
     return ResponseEnvelope(
         data=ProfileVideoOut(
             merchant_id=merchant.id,
@@ -80,6 +97,40 @@ async def update_profile_video(
             profile_video_thumbnail_url=merchant.profile_video_thumbnail_url,
         ),
         message="Store video updated.",
+    )
+
+
+@router.delete("/merchants/me/profile-video", response_model=ResponseEnvelope[ProfileVideoOut])
+async def delete_profile_video(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Removes the store's permanent showcase video."""
+    from app.services.cloudinary_service import CloudinaryService
+
+    merchant = await _owned_merchant(db, current_user)
+    old_video = merchant.profile_video_url
+    old_thumb = merchant.profile_video_thumbnail_url
+    merchant.profile_video_url = None
+    merchant.profile_video_thumbnail_url = None
+    await db.flush()
+
+    if old_video:
+        old_pid = CloudinaryService.extract_public_id(old_video)
+        if old_pid:
+            CloudinaryService.destroy(old_pid, resource_type="video")
+    if old_thumb:
+        old_thumb_pid = CloudinaryService.extract_public_id(old_thumb)
+        if old_thumb_pid:
+            CloudinaryService.destroy(old_thumb_pid, resource_type="image")
+
+    return ResponseEnvelope(
+        data=ProfileVideoOut(
+            merchant_id=merchant.id,
+            profile_video_url=None,
+            profile_video_thumbnail_url=None,
+        ),
+        message="Store video removed.",
     )
 
 
@@ -155,6 +206,7 @@ async def update_staff_permissions(
 
 
 @router.post("/merchants/{merchant_id}/track-call", response_model=ResponseEnvelope[CallTrackResponse])
+@router.post("/merchants/{merchant_id}/call", response_model=ResponseEnvelope[CallTrackResponse])
 async def track_call_click(
     merchant_id: uuid.UUID,
     request: CallTrackRequest | None = None,

@@ -9,7 +9,7 @@ from app.core.config import settings
 
 ALLOWED_UPLOAD_TARGETS = {
     "reels": {"video", "image", "auto"},
-    "kyc": {"image", "auto"},
+    "kyc": {"image", "auto", "raw"},
     "profile": {"image", "auto"},
     "stores": {"image", "auto"},
     "covers": {"image", "auto"},
@@ -188,4 +188,56 @@ class CloudinaryService:
 
         CloudinaryService._url_cache[url] = url
         return url
+
+    @staticmethod
+    def destroy(public_id: str, resource_type: str = "video") -> Dict[str, Any]:
+        """
+        Deletes an asset from Cloudinary storage bucket by its public_id.
+        """
+        if not _ensure_cloudinary_configured():
+            return {"result": "not_configured"}
+
+        try:
+            return cloudinary.uploader.destroy(public_id, resource_type=resource_type, invalidate=True)
+        except Exception as exc:
+            import logging
+            logging.getLogger("fyndo.cloudinary").error(f"Cloudinary destroy failed for {public_id}: {exc}")
+            return {"result": "error", "error": str(exc)}
+
+    CLOUDINARY_TRANSFORM_PREFIXES = (
+        "c_", "w_", "h_", "f_", "q_", "sp_", "b_", "e_", "so_", "eo_", "du_",
+        "fl_", "t_", "fps_", "ac_", "vc_", "br_", "co_", "o_", "r_", "g_",
+        "a_", "l_", "u_", "p_", "pg_", "dn_", "ar_", "z_", "y_", "x_"
+    )
+
+    @staticmethod
+    def extract_public_id(url: Optional[str]) -> Optional[str]:
+        """
+        Extracts the Cloudinary public_id from a Cloudinary asset URL.
+        Handles query strings, hashes, nested folders, version tags (e.g. /v1234567890/),
+        and single/composite transformation segments.
+        """
+        if not url or "res.cloudinary.com" not in url or "/upload/" not in url:
+            return None
+        try:
+            clean_url = url.split("?")[0].split("#")[0]
+            after_upload = clean_url.split("/upload/")[1]
+            segments = after_upload.split("/")
+            filtered = []
+            for seg in segments:
+                if not seg:
+                    continue
+                if "," in seg or seg.startswith(CloudinaryService.CLOUDINARY_TRANSFORM_PREFIXES):
+                    continue
+                if seg.startswith("v") and seg[1:].isdigit():
+                    continue
+                filtered.append(seg)
+            if not filtered:
+                return None
+            joined = "/".join(filtered)
+            public_id = joined.rsplit(".", 1)[0]
+            return public_id
+        except Exception:
+            return None
+
 
