@@ -397,6 +397,15 @@ async def update_merchant_profile(
             merchant.sub_categories = None
         dump.pop("sub_categories", None)
 
+    if "description" in dump:
+        desc = dump["description"]
+        if desc is not None and (desc.strip() == "" or desc.strip().lower() in ("none", "null")):
+            dump["description"] = None
+
+    # City can be set once during onboarding and cannot be changed by merchant; requires admin change request
+    if merchant.city and "city" in dump and dump["city"] != merchant.city:
+        dump.pop("city", None)
+
     for field, value in dump.items():
         if hasattr(merchant, field):
             setattr(merchant, field, value)

@@ -55,10 +55,59 @@ class MerchantConnectionManager:
 merchant_sockets = MerchantConnectionManager()
 
 
+class UserConnectionManager:
+    def __init__(self) -> None:
+        self._connections: Dict[str, Set[WebSocket]] = defaultdict(set)
+        self._lock = asyncio.Lock()
+
+    async def connect(self, user_id: str, websocket: WebSocket) -> None:
+        await websocket.accept()
+        async with self._lock:
+            self._connections[user_id].add(websocket)
+
+    async def disconnect(self, user_id: str, websocket: WebSocket) -> None:
+        async with self._lock:
+            sockets = self._connections.get(user_id)
+            if not sockets:
+                return
+            sockets.discard(websocket)
+            if not sockets:
+                self._connections.pop(user_id, None)
+
+    def connection_count(self, user_id: str) -> int:
+        return len(self._connections.get(user_id, ()))
+
+    async def broadcast_to_user(self, user_id: str, payload: Dict[str, Any]) -> int:
+        """Sends payload to every live socket of the user; returns deliveries."""
+        async with self._lock:
+            targets = list(self._connections.get(user_id, ()))
+        delivered = 0
+        for websocket in targets:
+            try:
+                await websocket.send_json(payload)
+                delivered += 1
+            except Exception:
+                logger.debug("Dropping dead user socket for %s", user_id, exc_info=True)
+                await self.disconnect(user_id, websocket)
+        return delivered
+
+
+user_sockets = UserConnectionManager()
+
+
 async def broadcast_safe(merchant_id: str, payload: Dict[str, Any]) -> int:
     """Best-effort broadcast that never breaks the calling request."""
     try:
         return await merchant_sockets.broadcast_to_merchant(merchant_id, payload)
     except Exception:
         logger.warning("Merchant broadcast failed for %s", merchant_id, exc_info=True)
+        return 0
+
+
+async def broadcast_user_safe(user_id: str, payload: Dict[str, Any]) -> int:
+    """Best-effort user broadcast that never breaks the calling request."""
+    try:
+        return await user_sockets.broadcast_to_user(user_id, payload)
+    except Exception:
+        logger.warning("User broadcast failed for %s", user_id, exc_info=True)
         return 0

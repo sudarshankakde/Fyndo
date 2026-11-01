@@ -115,15 +115,15 @@ async def test_update_reel_expiry_validation_errors(client):
     assert res_earlier.status_code == 400
     assert "later than the current expiry date" in res_earlier.text
 
-    # 3. Exceeding sector limit (Food is capped at 5 days)
-    too_long_expiry = (now + timedelta(days=10)).isoformat()
-    res_exceed = await client.patch(
+    # 3. Extended expiry (no 5-day ceiling limit for Food)
+    extended_expiry = (now + timedelta(days=10)).isoformat()
+    res_extend = await client.patch(
         f"/api/v1/reels/{reel_id}",
-        json={"expires_at": too_long_expiry},
+        json={"expires_at": extended_expiry},
         headers=bearer(store.owner_token),
     )
-    assert res_exceed.status_code == 400
-    assert "cannot exceed maximum validity" in res_exceed.text
+    assert res_extend.status_code == 200
+    assert res_extend.json()["data"]["coupon"]["validity_days"] == 10
 
 
 @pytest.mark.asyncio

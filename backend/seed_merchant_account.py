@@ -1,106 +1,104 @@
+import sys
+import os
 import uuid
+import asyncio
 from datetime import datetime, timedelta, timezone
-import sqlite3
 import bcrypt
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from app.core.database import async_session_factory
+from sqlalchemy import text
 
 def get_hash(pin: str) -> str:
     salt = bcrypt.gensalt()
     return bcrypt.hashpw(pin.encode("utf-8"), salt).decode("utf-8")
 
-conn = sqlite3.connect('fyndo_dev.db')
-c = conn.cursor()
+async def seed_postgres():
+    async with async_session_factory() as db:
+        user_phone = '+919876543210'
+        res = await db.execute(text('SELECT id FROM users WHERE phone = :p'), {'p': user_phone})
+        row = res.fetchone()
+        if row:
+            user_id = row[0]
+            await db.execute(text('''
+                UPDATE users
+                SET role = 'MERCHANT', full_name = 'The Brew House Koramangala', is_active = true, onboarding_completed = true
+                WHERE id = :uid
+            '''), {'uid': user_id})
+        else:
+            user_id = uuid.uuid4()
+            await db.execute(text('''
+                INSERT INTO users (id, phone, full_name, role, is_active, preferred_language, onboarding_completed, created_at, updated_at)
+                VALUES (:uid, :p, 'The Brew House Koramangala', 'MERCHANT', true, 'en', true, NOW(), NOW())
+            '''), {'uid': user_id, 'p': user_phone})
 
-# 1. Update/ensure merchant user
-user_phone = '+919876543210'
-c.execute("SELECT id FROM users WHERE phone = ?", (user_phone,))
-user_row = c.fetchone()
+        cover_url = 'https://images.unsplash.com/photo-1554118811-1e0d58224f24?q=80&w=1200'
+        logo_url = 'https://images.unsplash.com/photo-1514432324607-a09d9b4aefdd?q=80&w=300'
+        kyc_doc = 'https://res.cloudinary.com/fyndo/kyc/sample_store_act.pdf'
 
-if user_row:
-    user_id = user_row[0]
-    c.execute("""
-        UPDATE users 
-        SET role = 'MERCHANT', full_name = 'The Brew House', is_active = 1
-        WHERE id = ?
-    """, (user_id,))
-else:
-    user_id = uuid.uuid4().hex
-    c.execute("""
-        INSERT INTO users (id, phone, full_name, role, is_active, preferred_language, created_at, updated_at)
-        VALUES (?, ?, 'The Brew House', 'MERCHANT', 1, 'en', datetime('now'), datetime('now'))
-    """, (user_id, user_phone))
+        m_res = await db.execute(text('SELECT id FROM merchants WHERE user_id = :uid'), {'uid': user_id})
+        m_row = m_res.fetchone()
+        if m_row:
+            merchant_id = m_row[0]
+            await db.execute(text('''
+                UPDATE merchants
+                SET business_name = 'The Brew House Koramangala',
+                    sector = 'Food & Dining',
+                    address_text = '123, 5th Block, Koramangala, Bengaluru, Karnataka 560034',
+                    city = 'Bengaluru',
+                    latitude = 12.9352,
+                    longitude = 77.6245,
+                    kyc_status = 'APPROVED',
+                    kyc_doc_url = :kyc,
+                    cover_url = :cover,
+                    logo_url = :logo,
+                    profile_video_thumbnail_url = :cover,
+                    subscription_status = 'ACTIVE',
+                    subscription_start_date = NOW(),
+                    subscription_expires_at = NOW() + INTERVAL '90 days',
+                    updated_at = NOW()
+                WHERE id = :mid
+            '''), {'mid': merchant_id, 'cover': cover_url, 'logo': logo_url, 'kyc': kyc_doc})
+        else:
+            merchant_id = uuid.uuid4()
+            await db.execute(text('''
+                INSERT INTO merchants (id, user_id, business_name, sector, address_text, city, latitude, longitude, kyc_status, kyc_doc_url, cover_url, logo_url, profile_video_thumbnail_url, subscription_status, subscription_start_date, subscription_expires_at, call_clicks_count, created_at, updated_at)
+                VALUES (:mid, :uid, 'The Brew House Koramangala', 'Food & Dining', '123, 5th Block, Koramangala, Bengaluru, Karnataka 560034', 'Bengaluru', 12.9352, 77.6245, 'APPROVED', :kyc, :cover, :logo, :cover, 'ACTIVE', NOW(), NOW() + INTERVAL '90 days', 42, NOW(), NOW())
+            '''), {'mid': merchant_id, 'uid': user_id, 'cover': cover_url, 'logo': logo_url, 'kyc': kyc_doc})
 
-# 2. Update/ensure merchant profile
-c.execute("SELECT id FROM merchants WHERE user_id = ?", (user_id,))
-m_row = c.fetchone()
+        staff_phone = '+919876543211'
+        pin_hash = get_hash('123456')
+        s_res = await db.execute(text('SELECT id FROM merchant_staff WHERE merchant_id = :mid AND phone = :sp'), {'mid': merchant_id, 'sp': staff_phone})
+        s_row = s_res.fetchone()
+        if s_row:
+            await db.execute(text('''
+                UPDATE merchant_staff
+                SET staff_name = 'Rahul (Counter Cashier)', pin_hash = :ph, is_active = true, can_upload_reels = true, can_manage_content = true
+                WHERE id = :sid
+            '''), {'sid': s_row[0], 'ph': pin_hash})
+        else:
+            staff_id = uuid.uuid4()
+            await db.execute(text('''
+                INSERT INTO merchant_staff (id, merchant_id, staff_name, phone, pin_hash, is_active, can_upload_reels, can_manage_content, created_at)
+                VALUES (:sid, :mid, 'Rahul (Counter Cashier)', :sp, :ph, true, true, true, NOW())
+            '''), {'sid': staff_id, 'mid': merchant_id, 'sp': staff_phone, 'ph': pin_hash})
 
-cover_url = 'https://images.unsplash.com/photo-1554118811-1e0d58224f24?q=80&w=1200'
-logo_url = 'https://images.unsplash.com/photo-1514432324607-a09d9b4aefdd?q=80&w=300'
+        reel_res = await db.execute(text('SELECT id FROM reels WHERE merchant_id = :mid'), {'mid': merchant_id})
+        reel_row = reel_res.fetchone()
+        if not reel_row:
+            reel_id = uuid.uuid4()
+            await db.execute(text('''
+                INSERT INTO reels (id, merchant_id, title, video_url, thumbnail_url, duration_seconds, views_count, status, is_expired, expires_at, allow_comments, audio_type, created_at, updated_at)
+                VALUES (:rid, :mid, 'Fresh Brews & Handcrafted Pizzas', 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4', :thumb, 30, 240, 'APPROVED', false, NOW() + INTERVAL '30 days', true, 'CAMERA_MIC', NOW(), NOW())
+            '''), {'rid': reel_id, 'mid': merchant_id, 'thumb': cover_url})
+            coupon_id = uuid.uuid4()
+            await db.execute(text('''
+                INSERT INTO coupon_templates (id, merchant_id, reel_id, title, discount_type, discount_value, min_order_amount, validity_days, is_active, expires_at, created_at)
+                VALUES (:cid, :mid, :rid, 'Flat 50% OFF on Fresh Brews', 'PERCENTAGE', 50, 200, 7, true, NOW() + INTERVAL '30 days', NOW())
+            '''), {'cid': coupon_id, 'mid': merchant_id, 'rid': reel_id})
 
-if m_row:
-    merchant_id = m_row[0]
-    c.execute("""
-        UPDATE merchants
-        SET business_name = 'The Brew House',
-            sector = 'Food & Dining',
-            address_text = '123, 5th Block, Koramangala, Bengaluru, Karnataka 560034',
-            city = 'Bengaluru',
-            latitude = 12.9352,
-            longitude = 77.6245,
-            kyc_status = 'APPROVED',
-            profile_video_thumbnail_url = ?,
-            call_clicks_count = 42,
-            updated_at = datetime('now')
-        WHERE id = ?
-    """, (cover_url, merchant_id))
-else:
-    merchant_id = uuid.uuid4().hex
-    c.execute("""
-        INSERT INTO merchants (id, user_id, business_name, sector, address_text, city, latitude, longitude, kyc_status, profile_video_thumbnail_url, call_clicks_count, created_at, updated_at)
-        VALUES (?, ?, 'The Brew House', 'Food & Dining', '123, 5th Block, Koramangala, Bengaluru, Karnataka 560034', 'Bengaluru', 12.9352, 77.6245, 'APPROVED', ?, 42, datetime('now'), datetime('now'))
-    """, (merchant_id, user_id, cover_url))
+        await db.commit()
+        print("Successfully seeded PostgreSQL merchant account and counter staff!")
 
-# 3. Approve reels and set future expiry
-future_date = (datetime.now(timezone.utc) + timedelta(days=30)).strftime('%Y-%m-%d %H:%M:%S')
-c.execute("""
-    UPDATE reels
-    SET status = 'APPROVED',
-        is_expired = 0,
-        expires_at = ?,
-        deleted_at = NULL,
-        views_count = CASE WHEN views_count = 0 THEN 240 ELSE views_count END
-    WHERE merchant_id = ?
-""", (future_date, merchant_id))
-
-# 4. Set future expiry for coupons
-c.execute("""
-    UPDATE coupon_templates
-    SET is_active = 1,
-        expires_at = ?
-    WHERE merchant_id = ?
-""", (future_date, merchant_id))
-
-# 5. Add or update counter staff
-staff_phone = '+919876543211'
-c.execute("SELECT id FROM merchant_staff WHERE merchant_id = ? AND phone = ?", (merchant_id, staff_phone))
-staff_row = c.fetchone()
-pin_hash = get_hash('123456')
-
-if staff_row:
-    c.execute("""
-        UPDATE merchant_staff
-        SET staff_name = 'Rahul (Counter Cashier)',
-            pin_hash = ?,
-            is_active = 1,
-            can_upload_reels = 1
-        WHERE id = ?
-    """, (pin_hash, staff_row[0]))
-else:
-    staff_id = uuid.uuid4().hex
-    c.execute("""
-        INSERT INTO merchant_staff (id, merchant_id, staff_name, phone, pin_hash, is_active, can_upload_reels, created_at)
-        VALUES (?, ?, 'Rahul (Counter Cashier)', ?, ?, 1, 1, datetime('now'))
-    """, (staff_id, merchant_id, staff_phone, pin_hash))
-
-conn.commit()
-conn.close()
-print("Successfully seeded merchant account and counter staff!")
+if __name__ == '__main__':
+    asyncio.run(seed_postgres())

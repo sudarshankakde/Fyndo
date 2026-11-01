@@ -172,12 +172,18 @@ class AuthService:
                 detail="Store phone or staff mobile number is required."
             )
 
-        lookup_phone = raw_phone.strip().replace(" ", "")
-        if not lookup_phone.startswith("+91"):
-            lookup_phone = f"+91{lookup_phone}"
+        raw = raw_phone.strip().replace(" ", "").replace("-", "")
+        phone_variants = {raw, raw_phone.strip()}
+        if raw.startswith("+91"):
+            phone_variants.add(raw[3:])
+        elif len(raw) == 10 and raw.isdigit():
+            phone_variants.add(f"+91{raw}")
+        elif raw.startswith("0") and len(raw) == 11 and raw.isdigit():
+            phone_variants.add(raw[1:])
+            phone_variants.add(f"+91{raw[1:]}")
 
         # 1. Try finding staff directly by staff's phone
-        staff_res = await db.execute(select(MerchantStaff).where(MerchantStaff.phone == lookup_phone))
+        staff_res = await db.execute(select(MerchantStaff).where(MerchantStaff.phone.in_(phone_variants)))
         staff = staff_res.scalars().first()
 
         merchant = None
@@ -186,14 +192,20 @@ class AuthService:
             merchant = merch_res.scalars().first()
         else:
             # 2. Try finding merchant by owner's phone
-            user_res = await db.execute(select(User).where(User.phone == lookup_phone))
+            user_res = await db.execute(select(User).where(User.phone.in_(phone_variants)))
             owner = user_res.scalars().first()
             if owner:
                 merch_res = await db.execute(select(Merchant).where(Merchant.user_id == owner.id))
                 merchant = merch_res.scalars().first()
                 if merchant:
                     staff_res = await db.execute(select(MerchantStaff).where(MerchantStaff.merchant_id == merchant.id))
-                    staff = staff_res.scalars().first()
+                    staff_list = staff_res.scalars().all()
+                    matched = None
+                    for s in staff_list:
+                        if verify_password(request.pin, s.pin_hash):
+                            matched = s
+                            break
+                    staff = matched or (staff_list[0] if staff_list else None)
 
         if not merchant or not staff:
             raise HTTPException(
@@ -521,23 +533,59 @@ class AuthService:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid role: {role}")
 
         target_phone = phone or (
-            "+919876543210" if role_upper in ["SHOPPER", "MERCHANT"]
-            else "+919999900000" if role_upper == "SUPER_ADMIN"
-            else "+919876543219"
+            "+919876543210" if role_upper == "MERCHANT"
+            else "+919999988888" if role_upper == "SHOPPER"
+            else "+919876543211" if role_upper == "ROLE_CASHIER"
+            else "+919999900000"
         )
 
         res = await db.execute(select(User).where(User.phone == target_phone))
         user = res.scalars().first()
+        target_enum_role = (
+            UserRole.SUPER_ADMIN if role_upper == "SUPER_ADMIN"
+            else UserRole.MERCHANT if role_upper == "MERCHANT"
+            else UserRole.SHOPPER
+        )
+
         if not user:
-            assigned_role = (
-                UserRole.SUPER_ADMIN if role_upper == "SUPER_ADMIN"
-                else UserRole.MERCHANT if role_upper == "MERCHANT"
-                else UserRole.SHOPPER
+            user = User(
+                phone=target_phone,
+                full_name=f"Demo {role_upper.title()} User",
+                role=target_enum_role,
+                onboarding_completed=(role_upper in ["MERCHANT", "SUPER_ADMIN"]),
+                is_active=True,
             )
-            user = User(phone=target_phone, full_name=f"Demo {role_upper.title()} User", role=assigned_role)
             db.add(user)
             await db.flush()
             await db.refresh(user)
+        else:
+            if user.role != target_enum_role:
+                user.role = target_enum_role
+            if role_upper in ["MERCHANT", "SUPER_ADMIN"]:
+                user.onboarding_completed = True
+            await db.flush()
+
+        # Ensure merchant profile exists if logging in as MERCHANT
+        if role_upper == "MERCHANT":
+            m_res = await db.execute(select(Merchant).where(Merchant.user_id == user.id))
+            merchant = m_res.scalars().first()
+            if not merchant:
+                merchant = Merchant(
+                    user_id=user.id,
+                    business_name="The Brew House Koramangala",
+                    sector="Food & Dining",
+                    address_text="123, 5th Block, Koramangala, Bengaluru, Karnataka 560034",
+                    city="Bengaluru",
+                    latitude=12.9352,
+                    longitude=77.6245,
+                    kyc_status="APPROVED",
+                    kyc_doc_url="https://res.cloudinary.com/fyndo/kyc/sample_store_act.pdf",
+                    cover_url="https://images.unsplash.com/photo-1554118811-1e0d58224f24?q=80&w=1200",
+                    logo_url="https://images.unsplash.com/photo-1514432324607-a09d9b4aefdd?q=80&w=300",
+                    subscription_status="ACTIVE",
+                )
+                db.add(merchant)
+                await db.flush()
 
         user_id_str = str(user.id)
         access_token = create_access_token(subject=user_id_str, role=role_upper, extra_claims={"phone": user.phone})

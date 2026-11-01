@@ -81,7 +81,9 @@ async def test_broadcast_send_to_merchants(client: AsyncClient):
         # Verify audit log recorded
         audit = (
             await s.execute(
-                select(AuditLog).where(AuditLog.action == "notification.broadcast")
+                select(AuditLog)
+                .where(AuditLog.action == "notification.broadcast")
+                .order_by(AuditLog.timestamp.desc())
             )
         ).scalars().first()
         assert audit is not None

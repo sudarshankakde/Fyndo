@@ -323,18 +323,10 @@ async def update_reel(
                     detail="The new expiry date must be later than the current expiry date.",
                 )
 
-            max_days = max_validity_days(merchant.sector)
-            max_allowed = now + timedelta(days=max_days)
-            if req_expiry > max_allowed + timedelta(hours=1):
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Expiry date cannot exceed maximum validity of {max_days} days for your business category.",
-                )
-
             _set_expiry(reel, coupon, req_expiry)
             if coupon:
                 diff_days = max(1, (req_expiry.date() - now.date()).days)
-                coupon.validity_days = min(diff_days, max_days)
+                coupon.validity_days = diff_days
 
     await db.flush()
     await db.refresh(reel)

@@ -88,6 +88,31 @@ class NotificationService:
                 "recipient_id": str(user_id),
             },
         )
+
+        # Real-time WebSocket fanout to user's live devices and browser sessions
+        try:
+            from app.services.socket_service import broadcast_user_safe
+            unread = await cls.unread_count(db, user_id)
+            ws_payload = {
+                "event": "NEW_NOTIFICATION",
+                "data": {
+                    "notification": {
+                        "id": str(notification.id),
+                        "title": notification.title,
+                        "body": notification.body,
+                        "category": notification.category,
+                        "event_type": notification.event_type,
+                        "action_type": notification.action_type,
+                        "action_ref": notification.action_ref,
+                        "created_at": notification.created_at.isoformat() if notification.created_at else None,
+                    },
+                    "unread_count": unread,
+                },
+            }
+            asyncio.create_task(broadcast_user_safe(str(user_id), ws_payload))
+        except Exception:
+            logger.debug("Failed to broadcast real-time user notification", exc_info=True)
+
         return notification
 
     @classmethod

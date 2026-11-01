@@ -85,6 +85,14 @@ async def mark_all_notifications_read(
         target_id=current_user.id,
         updated=updated,
     )
+    try:
+        import asyncio
+        from app.services.socket_service import broadcast_user_safe
+        asyncio.create_task(
+            broadcast_user_safe(str(current_user.id), {"event": "UNREAD_COUNT", "data": {"unread_count": 0}})
+        )
+    except Exception:
+        pass
     return ResponseEnvelope(data={"updated": updated}, message="All alerts marked as read.")
 
 
@@ -109,6 +117,16 @@ async def mark_notification_read(
         target_id=notification_id,
         newly_read=outcome,
     )
+    if outcome:
+        try:
+            import asyncio
+            from app.services.socket_service import broadcast_user_safe
+            count = await NotificationService.unread_count(db, current_user.id)
+            asyncio.create_task(
+                broadcast_user_safe(str(current_user.id), {"event": "UNREAD_COUNT", "data": {"unread_count": count}})
+            )
+        except Exception:
+            pass
     return ResponseEnvelope(
         data={"notification_id": str(notification_id), "is_read": True},
         message="Alert marked as read.",

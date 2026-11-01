@@ -24,9 +24,19 @@ router = APIRouter()
 
 def _viewer_key(request: Request) -> str:
     """Stable anonymous device fingerprint used to dedupe logged-out views."""
-    host = request.client.host if request.client else "unknown"
+    device_id = (
+        request.headers.get("x-device-id")
+        or request.headers.get("x-viewer-id")
+        or request.query_params.get("viewer_key")
+        or ""
+    )
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        host = forwarded.split(",")[0].strip()
+    else:
+        host = request.client.host if request.client else "unknown"
     agent = request.headers.get("user-agent", "")
-    return hashlib.sha256(f"{host}|{agent}".encode("utf-8")).hexdigest()[:64]
+    return hashlib.sha256(f"{host}|{agent}|{device_id}".encode("utf-8")).hexdigest()[:64]
 
 
 @router.post("/reels/{reel_id}/view", response_model=ResponseEnvelope[dict])

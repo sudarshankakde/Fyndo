@@ -118,11 +118,16 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.add_middleware(MaxBodySizeMiddleware, max_bytes=settings.MAX_REQUEST_BYTES)
 app.add_middleware(
     CORSMiddleware,
-    # allow_origins=settings.BACKEND_CORS_ORIGINS,
-    allow_origins=["*"],
-    allow_credentials=settings.cors_allow_credentials,
+    allow_origins=settings.BACKEND_CORS_ORIGINS,
+    allow_origin_regex=(
+        r"^https?://(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+)(:\d+)?$"
+        if not settings.is_production
+        else None
+    ),
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 app.add_middleware(RequestLoggingMiddleware)
 

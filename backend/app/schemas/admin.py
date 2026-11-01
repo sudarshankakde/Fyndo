@@ -142,7 +142,7 @@ class AdminReelCreateRequest(BaseModel):
     title: str = Field(..., min_length=2, max_length=150)
     video_url: str = Field(..., min_length=10)
     thumbnail_url: str = Field(..., min_length=10)
-    duration_seconds: int = Field(30, ge=15, le=60)
+    duration_seconds: int = Field(30, ge=5, le=180)
     coupon_title: str = Field(..., min_length=2, max_length=100)
     discount_type: str = Field("PERCENTAGE", description="PERCENTAGE, FLAT_AMOUNT, BOGO")
     discount_value: float = Field(..., gt=0)

@@ -18,7 +18,7 @@ from app.core.database import async_session_factory, ensure_compatibility_schema
 from app.core.security import decode_access_token
 from app.models.merchant import Merchant, MerchantStaff
 from app.models.user import User
-from app.services.socket_service import merchant_sockets
+from app.services.socket_service import merchant_sockets, user_sockets
 
 router = APIRouter()
 
@@ -70,3 +70,76 @@ async def merchant_events(
         pass
     finally:
         await merchant_sockets.disconnect(key, websocket)
+
+
+async def _extract_user_id_from_token(token: Optional[str]) -> Optional[uuid.UUID]:
+    payload = decode_access_token(token) if token else None
+    if not payload or "sub" not in payload:
+        return None
+    try:
+        return uuid.UUID(payload["sub"])
+    except (ValueError, TypeError):
+        return None
+
+
+@router.websocket("/ws/notifications")
+async def user_notification_events(
+    websocket: WebSocket,
+    token: Optional[str] = Query(None),
+):
+    user_id = await _extract_user_id_from_token(token)
+    if not user_id:
+        await websocket.close(code=WS_POLICY_VIOLATION)
+        return
+
+    key = str(user_id)
+    await user_sockets.connect(key, websocket)
+    try:
+        from app.services.notification_service import NotificationService
+
+        async with async_session_factory() as db:
+            count = await NotificationService.unread_count(db, user_id)
+
+        await websocket.send_json(
+            {"event": "CONNECTED", "data": {"user_id": key, "unread_count": count}}
+        )
+        while True:
+            message = await websocket.receive_text()
+            if message == "ping":
+                await websocket.send_text("pong")
+    except WebSocketDisconnect:
+        pass
+    finally:
+        await user_sockets.disconnect(key, websocket)
+
+
+@router.websocket("/ws/users/{user_id}")
+async def user_direct_events(
+    websocket: WebSocket,
+    user_id: uuid.UUID,
+    token: Optional[str] = Query(None),
+):
+    token_user_id = await _extract_user_id_from_token(token)
+    if not token_user_id or token_user_id != user_id:
+        await websocket.close(code=WS_POLICY_VIOLATION)
+        return
+
+    key = str(user_id)
+    await user_sockets.connect(key, websocket)
+    try:
+        from app.services.notification_service import NotificationService
+
+        async with async_session_factory() as db:
+            count = await NotificationService.unread_count(db, user_id)
+
+        await websocket.send_json(
+            {"event": "CONNECTED", "data": {"user_id": key, "unread_count": count}}
+        )
+        while True:
+            message = await websocket.receive_text()
+            if message == "ping":
+                await websocket.send_text("pong")
+    except WebSocketDisconnect:
+        pass
+    finally:
+        await user_sockets.disconnect(key, websocket)
