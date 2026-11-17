@@ -176,3 +176,37 @@ async def test_dev_token_generator(client: AsyncClient):
         assert data["role"] == role
         assert data["access_token"] is not None
         assert data["refresh_token"] is not None
+
+
+@pytest.mark.asyncio
+async def test_uncompleted_merchant_can_login_as_shopper(client: AsyncClient):
+    """A phone number that initiated merchant login but never completed store onboarding
+
+    must still be allowed to send OTP and authenticate via shopper login.
+    """
+    phone = "+919811229900"
+
+    # Step 1: User enters via Merchant Login
+    m_send = await client.post("/api/v1/auth/otp/send", json={"phone": phone, "role": "merchant"})
+    assert m_send.status_code == 200
+    m_otp = m_send.json()["data"]["test_otp"]
+
+    m_verify = await client.post("/api/v1/auth/otp/verify", json={"phone": phone, "otp": m_otp, "role": "merchant"})
+    assert m_verify.status_code == 200
+    m_user = m_verify.json()["data"]["user"]
+    assert m_user["role"] == "MERCHANT"
+    # Store registration is NOT submitted (onboarding not completed)
+    assert m_user.get("merchant_id") is None
+
+    # Step 2: Later, user tries to sign in as a Shopper
+    s_send = await client.post("/api/v1/auth/otp/send", json={"phone": phone, "role": "shopper"})
+    assert s_send.status_code == 200, f"Expected 200 on shopper send_otp, got {s_send.status_code}: {s_send.text}"
+    s_otp = s_send.json()["data"]["test_otp"]
+
+    # Step 3: User verifies OTP as a Shopper
+    s_verify = await client.post("/api/v1/auth/otp/verify", json={"phone": phone, "otp": s_otp, "role": "shopper"})
+    assert s_verify.status_code == 200, f"Expected 200 on shopper verify_otp, got {s_verify.status_code}: {s_verify.text}"
+    s_user = s_verify.json()["data"]["user"]
+    # Role must be dynamically adjusted to SHOPPER since no store was registered
+    assert s_user["role"] == "SHOPPER"
+    assert s_user["phone"] == phone

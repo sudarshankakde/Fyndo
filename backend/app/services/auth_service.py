@@ -80,25 +80,20 @@ class AuthService:
             return
 
         # Determine if user is registered as a merchant
-        is_merchant = False
-        user_role_str = user.role.value if hasattr(user.role, "value") else str(user.role)
-        if user_role_str == "MERCHANT":
-            is_merchant = True
-        else:
-            merch_stmt = select(Merchant).where(Merchant.user_id == user.id)
-            merch_res = await db.execute(merch_stmt)
-            if merch_res.scalars().first():
-                is_merchant = True
+        # A user is an established merchant only if they actually have a registered store profile (Merchant row)
+        merch_stmt = select(Merchant).where(Merchant.user_id == user.id)
+        merch_res = await db.execute(merch_stmt)
+        has_merchant_store = merch_res.scalars().first() is not None
 
         if norm_role in ("shopper", "customer"):
-            if is_merchant:
+            if has_merchant_store:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="This phone number is registered as a Merchant account. Please sign in through Merchant Login.",
                 )
         elif norm_role == "merchant":
-            # An existing merchant (is_merchant == True) or an existing customer without
-            # a store record (is_merchant == False) is allowed to authenticate and onboard.
+            # An existing merchant (has_merchant_store == True) or an existing customer without
+            # a store record (has_merchant_store == False) is allowed to authenticate and onboard.
             # Role upgrade to MERCHANT occurs only upon successful onboarding submission.
             pass
 
@@ -143,6 +138,14 @@ class AuthService:
             if norm_role == "merchant" and user.role != UserRole.MERCHANT:
                 user.role = UserRole.MERCHANT
                 await db.flush()
+            elif norm_role in ("shopper", "customer") and user.role == UserRole.MERCHANT:
+                # If they have no registered merchant store and are logging in as a shopper,
+                # switch their active role to SHOPPER so they enter the shopper experience
+                merch_stmt = select(Merchant).where(Merchant.user_id == user.id)
+                merch_res = await db.execute(merch_stmt)
+                if not merch_res.scalars().first():
+                    user.role = UserRole.SHOPPER
+                    await db.flush()
 
         if not user.is_active:
             raise HTTPException(
