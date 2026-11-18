@@ -96,7 +96,7 @@ class Settings(BaseSettings):
     # Logging (console always; size-rotated files when LOG_TO_FILE)
     LOG_LEVEL: str = "INFO"
     LOG_FORMAT: Optional[str] = None  # None -> JSON in production, text in dev
-    LOG_TO_FILE: bool = True
+    LOG_TO_FILE: bool = not bool(os.environ.get("VERCEL"))
     LOG_DIR: str = "logs"
     LOG_FILE_NAME: str = "fyndo.log"
     AUDIT_FILE_NAME: str = "audit.log"
@@ -133,6 +133,22 @@ class Settings(BaseSettings):
         if not self.LOG_FORMAT:
             return self.is_production
         return self.LOG_FORMAT.strip().lower() == "json"
+
+    @field_validator("DATABASE_URL", mode="before")
+    @classmethod
+    def _normalize_database_url(cls, value: str) -> str:
+        if not value or not isinstance(value, str):
+            return value
+        v = value.strip()
+        # Automatically handle standard postgresql:// or postgres:// from Vercel / Neon / Supabase
+        if v.startswith("postgres://"):
+            v = "postgresql+asyncpg://" + v[len("postgres://"):]
+        elif v.startswith("postgresql://") and not v.startswith("postgresql+asyncpg://"):
+            v = "postgresql+asyncpg://" + v[len("postgresql://"):]
+
+        if "sslmode=" in v:
+            v = v.replace("sslmode=require", "ssl=require").replace("sslmode=prefer", "ssl=prefer")
+        return v
 
     @field_validator("BACKEND_CORS_ORIGINS", mode="before")
     @classmethod

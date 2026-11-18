@@ -1,0 +1,39 @@
+# Render Blueprint for Fyndo Backend (Standalone GitHub Repository)
+# Documentation: https://render.com/docs/blueprint-spec
+
+services:
+  - type: web
+    name: fyndo-backend
+    env: python
+    plan: starter # or free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 2
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: ENVIRONMENT
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: fyndo-db
+          property: connectionString
+      - key: REDIS_URL
+        sync: false # Set to your Upstash or Render Redis connection string
+      - key: REDIS_REQUIRED
+        value: "false"
+      - key: JWT_ACCESS_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      - key: SUPER_ADMIN_PASSWORD
+        generateValue: true
+      - key: BACKEND_CORS_ORIGINS
+        sync: false # Set to your Render frontend URL, e.g. https://fyndo-frontend.onrender.com
+
+databases:
+  - name: fyndo-db
+    databaseName: fyndo_db
+    user: fyndo_user
+    plan: starter # or free
+    postgresMajorVersion: 16
