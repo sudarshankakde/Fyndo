@@ -216,6 +216,13 @@ class Settings(BaseSettings):
                 "SMS_GATEWAY_PROVIDER=mock while ENVIRONMENT=production: OTP login will fail."
             )
 
+        # 6. Database URL check for cloud environments.
+        if self.is_production and "localhost" in self.DATABASE_URL:
+            logger.error(
+                "CRITICAL: DATABASE_URL is pointing to 'localhost' in production! "
+                "Ensure DATABASE_URL is set in Render Environment Variables to your Render PostgreSQL connection string."
+            )
+
         return self
 
 

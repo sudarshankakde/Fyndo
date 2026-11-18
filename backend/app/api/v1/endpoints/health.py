@@ -1,9 +1,7 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.database import get_db
 from app.core.redis import get_redis_client
 from app.schemas.common import ResponseEnvelope
 
@@ -11,11 +9,13 @@ router = APIRouter()
 
 
 @router.get("/health", response_model=ResponseEnvelope[dict])
-async def health_check(db: AsyncSession = Depends(get_db)):
+async def health_check():
     """Liveness/readiness probe verifying the database and cache are reachable."""
     database_status = "connected"
     try:
-        await db.execute(text("SELECT 1"))
+        from app.core.database import async_session_factory
+        async with async_session_factory() as session:
+            await session.execute(text("SELECT 1"))
     except Exception as exc:
         database_status = f"unreachable ({exc})"
 
