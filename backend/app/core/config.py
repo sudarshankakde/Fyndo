@@ -140,14 +140,34 @@ class Settings(BaseSettings):
         if not value or not isinstance(value, str):
             return value
         v = value.strip()
-        # Automatically handle standard postgresql:// or postgres:// from Vercel / Neon / Supabase
+        # Automatically handle standard postgresql:// or postgres:// from Vercel / Neon / Supabase / Render
         if v.startswith("postgres://"):
             v = "postgresql+asyncpg://" + v[len("postgres://"):]
         elif v.startswith("postgresql://") and not v.startswith("postgresql+asyncpg://"):
             v = "postgresql+asyncpg://" + v[len("postgresql://"):]
 
-        if "sslmode=" in v:
-            v = v.replace("sslmode=require", "ssl=require").replace("sslmode=prefer", "ssl=prefer")
+        try:
+            import urllib.parse as up
+            parsed = up.urlparse(v)
+            if parsed.query:
+                qs = up.parse_qs(parsed.query)
+                cleaned_qs = {}
+                for k, vals in qs.items():
+                    # Strip parameters that asyncpg.connect() rejects with TypeError
+                    if k in {"channel_binding", "gssencmode", "endpoint"}:
+                        continue
+                    if k == "sslmode":
+                        first_val = vals[0] if vals else ""
+                        if first_val in ("require", "verify-ca", "verify-full", "prefer"):
+                            cleaned_qs["ssl"] = ["require"]
+                        elif first_val == "disable":
+                            cleaned_qs["ssl"] = ["disable"]
+                    else:
+                        cleaned_qs[k] = vals
+                new_query = up.urlencode(cleaned_qs, doseq=True)
+                v = up.urlunparse((parsed.scheme, parsed.netloc, parsed.path, parsed.params, new_query, parsed.fragment))
+        except Exception:
+            pass
         return v
 
     @field_validator("BACKEND_CORS_ORIGINS", mode="before")
