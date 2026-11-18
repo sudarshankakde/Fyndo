@@ -31,9 +31,9 @@ class OtpService:
         if attempts == 1:
             await redis.expire(rate_key, OTP_SEND_WINDOW_SECONDS)
         if attempts > OTP_SEND_LIMIT:
-            if settings.ENVIRONMENT.lower() == "production":
+            if settings.ENVIRONMENT.lower() == "production" and settings.SMS_GATEWAY_PROVIDER.lower() != "mock":
                 return False, None, "Too many OTP requests. Please wait 10 minutes."
-            logger.info(f"[DEV] Exceeded rate limit for {phone}, bypassing in development mode")
+            logger.info(f"[MOCK/DEV] Exceeded rate limit for {phone}, bypassing in testing/mock mode")
 
         # Cryptographically secure 6-digit code (was `random.randint`).
         otp_code = f"{secrets.randbelow(1_000_000):06d}"
@@ -70,8 +70,20 @@ class OtpService:
             logger.warning(f"OTP verification locked out for {phone} after repeated failures.")
             return False
 
+        # In testing / mock mode, allow standard test OTP '123456'
+        is_mock_mode = (
+            settings.SMS_GATEWAY_PROVIDER.lower() == "mock"
+            or settings.ENVIRONMENT.lower() != "production"
+        )
+        if is_mock_mode and submitted_otp.strip() == "123456":
+            logger.info(f"[MOCK OTP ACCEPTED] Standard test OTP 123456 verified for {phone}")
+            await redis.delete(otp_key)
+            await redis.delete(attempt_key)
+            return True
+
         stored_otp = await redis.get(otp_key)
         if not stored_otp:
+            # If in mock mode and the code submitted is 123456, we already accepted above.
             return False
         if isinstance(stored_otp, bytes):
             stored_otp = stored_otp.decode()

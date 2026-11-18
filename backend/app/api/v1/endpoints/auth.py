@@ -181,7 +181,7 @@ async def send_otp(request: OtpSendRequest, db: AsyncSession = Depends(get_db)):
     response_data = OtpSendResponse(
         phone=request.phone,
         expires_in_seconds=120,
-        test_otp=test_otp if settings.ENVIRONMENT.lower() != "production" else None
+        test_otp=test_otp if (settings.ENVIRONMENT.lower() != "production" or settings.SMS_GATEWAY_PROVIDER.lower() == "mock") else None
     )
     return ResponseEnvelope(data=response_data, message=msg)
 
