@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, HTMLResponse
 from starlette.middleware.gzip import GZipMiddleware
 from app.api.v1.api import api_router
 from app.admin import admin_router
@@ -201,6 +201,63 @@ app.include_router(api_router, prefix=settings.API_V1_STR)
 # instead of returning a JSON 401 envelope.
 app.add_exception_handler(RedirectToLogin, redirect_to_login_handler)
 app.include_router(admin_router)
+
+
+@app.get("/share/{resource_type}/{resource_id}", response_class=HTMLResponse, include_in_schema=False)
+async def share_redirect(resource_type: str, resource_id: str):
+    """Universal share landing page and deep-link redirect for reels, offers, and stores."""
+    norm_type = resource_type.strip().lower()
+    valid_types = {"reel": "Reel", "offer": "Offer", "store": "Store"}
+    label = valid_types.get(norm_type, "Content")
+    deep_link = f"fyndo://{norm_type}/{resource_id}"
+    web_fallback = f"https://fyndo.club/{norm_type}/{resource_id}"
+
+    html_content = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Fyndo | Discover Local Deals & Reels</title>
+  <meta property="og:title" content="Check out this {label} on Fyndo!" />
+  <meta property="og:description" content="Discover exclusive local discounts, verified store reels, and instant cashback near you on Fyndo." />
+  <meta property="og:type" content="website" />
+  <meta name="theme-color" content="#2563EB" />
+  <style>
+    * {{ margin: 0; padding: 0; box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }}
+    body {{ background: #0B0F19; color: #FFFFFF; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; padding: 24px; text-align: center; }}
+    .card {{ background: #131B2E; border: 1px solid rgba(255,255,255,0.1); border-radius: 24px; padding: 32px 24px; max-width: 400px; width: 100%; box-shadow: 0 20px 40px rgba(0,0,0,0.5); }}
+    .logo {{ width: 68px; height: 68px; border-radius: 18px; background: linear-gradient(135deg, #2563EB, #38BDF8); display: flex; align-items: center; justify-content: center; margin: 0 auto 20px; font-size: 32px; font-weight: bold; color: white; }}
+    h1 {{ font-size: 22px; font-weight: 700; margin-bottom: 8px; letter-spacing: -0.3px; }}
+    p {{ font-size: 14px; color: #94A3B8; line-height: 1.5; margin-bottom: 24px; }}
+    .btn {{ display: block; width: 100%; padding: 14px; border-radius: 14px; text-decoration: none; font-weight: 600; font-size: 15px; margin-bottom: 12px; transition: opacity 0.2s; }}
+    .btn-primary {{ background: #2563EB; color: #FFFFFF; }}
+    .btn-primary:active {{ opacity: 0.85; }}
+    .btn-secondary {{ background: rgba(255,255,255,0.08); color: #E2E8F0; border: 1px solid rgba(255,255,255,0.1); }}
+    .hint {{ font-size: 12px; color: #64748B; margin-top: 16px; }}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo">⚡</div>
+    <h1>Opening in Fyndo...</h1>
+    <p>Discover exclusive local store offers, video reels, and deals in your neighborhood.</p>
+    <a href="{deep_link}" class="btn btn-primary" id="open-app-btn">Open in Fyndo App</a>
+    <a href="{web_fallback}" class="btn btn-secondary">Continue on Web</a>
+    <div class="hint">If the app didn't open automatically, tap "Open in Fyndo App".</div>
+  </div>
+  <script>
+    // Automatically attempt deep link redirect
+    (function() {{
+      window.location.href = "{deep_link}";
+      setTimeout(function() {{
+        var btn = document.getElementById("open-app-btn");
+        if (btn) btn.innerText = "Open in App";
+      }}, 1200);
+    }})();
+  </script>
+</body>
+</html>"""
+    return HTMLResponse(content=html_content)
 
 
 @app.get("/", include_in_schema=False)
